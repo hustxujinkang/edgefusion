@@ -1,0 +1,43 @@
+device_manager:
+  modbus:
+    host: localhost
+    port: 502
+    timeout: 5
+  mqtt:
+    broker: localhost
+    password: null
+    port: 1883
+    username: null
+  ocpp:
+    endpoint: /ocpp
+    host: localhost
+    port: 8080
+monitor:
+  collect_interval: 10
+  dashboard_host: 0.0.0.0
+  dashboard_port: 5000
+  database_url: sqlite:///edgefusion.db
+strategy:
+  demand_response:
+    response_levels:
+      level1:
+        duration: 30
+        power_reduction: 10
+      level2:
+        duration: 60
+        power_reduction: 20
+      level3:
+        duration: 120
+        power_reduction: 30
+  peak_shaving:
+    peak_hours:
+    - 18:00-22:00
+    peak_power_limit: 10000
+    valley_hours:
+    - 00:00-06:00
+    valley_power_target: 5000
+  self_consumption:
+    grid_import_limit: 5000
+    min_soc: 20
+    pv_power_threshold: 1000
+    soc_target: 80

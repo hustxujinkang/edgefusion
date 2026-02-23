@@ -1,0 +1,103 @@
+2026-02-23 17:19:00,981 - DeviceManager - INFO - 手动注册设备: manual_test_device
+2026-02-23 17:23:45,354 - DeviceManager - INFO - 手动注册设备: manual_test_device
+2026-02-23 17:27:05,011 - DeviceManager - INFO - 手动注册设备: manual_test_device
+2026-02-23 17:29:59,493 - DeviceManager - INFO - 共发现0个设备
+2026-02-23 17:29:59,493 - DeviceManager - INFO - 手动注册设备: manual_test_device
+2026-02-23 17:30:36,938 - EdgeFusion - INFO - 加载配置完成
+2026-02-23 17:30:36,938 - EdgeFusion - INFO - 初始化设备管理器完成
+2026-02-23 17:30:36,988 - EdgeFusion - INFO - 初始化数据库完成
+2026-02-23 17:30:36,988 - EdgeFusion - INFO - 初始化数据采集器完成
+2026-02-23 17:30:36,990 - EdgeFusion - INFO - 初始化策略完成
+2026-02-23 17:30:36,992 - EdgeFusion - INFO - 初始化监控面板完成
+2026-02-23 17:30:36,993 - EdgeFusion - INFO - 启动EdgeFusion应用...
+2026-02-23 17:30:36,993 - DeviceManager - INFO - 连接modbus协议...
+2026-02-23 17:30:41,093 - pymodbus.logging - ERROR - Connection to (localhost, 502) failed: [WinError 10061] 由于目标计算机积极拒绝，无法连接。
+2026-02-23 17:30:41,093 - DeviceManager - WARNING - modbus协议连接失败，将在无此协议模式下运行
+2026-02-23 17:30:41,094 - DeviceManager - INFO - 连接mqtt协议...
+2026-02-23 17:30:45,199 - DeviceManager - WARNING - mqtt协议连接失败，将在无此协议模式下运行
+2026-02-23 17:30:45,200 - DeviceManager - INFO - 连接ocpp协议...
+2026-02-23 17:30:45,201 - DeviceManager - INFO - ocpp协议连接成功
+2026-02-23 17:30:45,202 - DeviceManager - INFO - 通过以下协议发现设备: ['ocpp']
+2026-02-23 17:30:45,202 - DeviceManager - INFO - 通过ocpp协议发现设备...
+2026-02-23 17:30:45,203 - DeviceManager - INFO - 共发现2个设备
+2026-02-23 17:30:45,210 - PeakShavingStrategy - INFO - 启动削峰填谷策略，峰值时段: ['18:00-22:00'], 谷值时段: ['00:00-06:00']
+2026-02-23 17:30:45,213 - EdgeFusion - INFO - EdgeFusion应用启动完成
+2026-02-23 17:30:45,214 - EdgeFusion - INFO - 系统运行中，按Ctrl+C停止
+2026-02-23 17:30:45,214 - PeakShavingStrategy - INFO - 削峰填谷策略执行结果: {'status': 'executed', 'time_slot': 'normal', 'timestamp': '2026-02-23T17:30:45.214679', 'actions': []}
+2026-02-23 17:30:55,218 - PeakShavingStrategy - INFO - 削峰填谷策略执行结果: {'status': 'executed', 'time_slot': 'normal', 'timestamp': '2026-02-23T17:30:55.218255', 'actions': []}
+2026-02-23 17:30:57,591 - werkzeug - INFO - [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5000
+ * Running on http://198.18.0.1:5000
+2026-02-23 17:30:57,593 - werkzeug - INFO - [33mPress CTRL+C to quit[0m
+2026-02-23 17:31:05,228 - PeakShavingStrategy - INFO - 削峰填谷策略执行结果: {'status': 'executed', 'time_slot': 'normal', 'timestamp': '2026-02-23T17:31:05.228088', 'actions': []}
+2026-02-23 17:31:15,241 - PeakShavingStrategy - INFO - 削峰填谷策略执行结果: {'status': 'executed', 'time_slot': 'normal', 'timestamp': '2026-02-23T17:31:15.241063', 'actions': []}
+2026-02-23 17:31:25,255 - PeakShavingStrategy - INFO - 削峰填谷策略执行结果: {'status': 'executed', 'time_slot': 'normal', 'timestamp': '2026-02-23T17:31:25.255635', 'actions': []}
+2026-02-23 17:31:28,747 - werkzeug - INFO - 127.0.0.1 - - [23/Feb/2026 17:31:28] "GET / HTTP/1.1" 200 -
+2026-02-23 17:31:28,789 - werkzeug - INFO - 127.0.0.1 - - [23/Feb/2026 17:31:28] "[33mGET /favicon.ico HTTP/1.1[0m" 404 -
+2026-02-23 17:31:34,014 - werkzeug - INFO - 127.0.0.1 - - [23/Feb/2026 17:31:34] "GET /api/status HTTP/1.1" 200 -
+2026-02-23 17:31:35,263 - PeakShavingStrategy - INFO - 削峰填谷策略执行结果: {'status': 'executed', 'time_slot': 'normal', 'timestamp': '2026-02-23T17:31:35.263830', 'actions': []}
+2026-02-23 17:31:45,270 - PeakShavingStrategy - INFO - 削峰填谷策略执行结果: {'status': 'executed', 'time_slot': 'normal', 'timestamp': '2026-02-23T17:31:45.270323', 'actions': []}
+2026-02-23 17:31:47,639 - werkzeug - INFO - 127.0.0.1 - - [23/Feb/2026 17:31:47] "GET /api/database HTTP/1.1" 200 -
+2026-02-23 17:31:55,276 - PeakShavingStrategy - INFO - 削峰填谷策略执行结果: {'status': 'executed', 'time_slot': 'normal', 'timestamp': '2026-02-23T17:31:55.276292', 'actions': []}
+2026-02-23 17:32:05,280 - PeakShavingStrategy - INFO - 削峰填谷策略执行结果: {'status': 'executed', 'time_slot': 'normal', 'timestamp': '2026-02-23T17:32:05.280120', 'actions': []}
+2026-02-23 17:32:15,284 - PeakShavingStrategy - INFO - 削峰填谷策略执行结果: {'status': 'executed', 'time_slot': 'normal', 'timestamp': '2026-02-23T17:32:15.284514', 'actions': []}
+2026-02-23 17:32:25,294 - PeakShavingStrategy - INFO - 削峰填谷策略执行结果: {'status': 'executed', 'time_slot': 'normal', 'timestamp': '2026-02-23T17:32:25.294675', 'actions': []}
+2026-02-23 17:32:35,311 - PeakShavingStrategy - INFO - 削峰填谷策略执行结果: {'status': 'executed', 'time_slot': 'normal', 'timestamp': '2026-02-23T17:32:35.311623', 'actions': []}
+2026-02-23 17:32:45,321 - PeakShavingStrategy - INFO - 削峰填谷策略执行结果: {'status': 'executed', 'time_slot': 'normal', 'timestamp': '2026-02-23T17:32:45.321427', 'actions': []}
+2026-02-23 17:32:55,334 - PeakShavingStrategy - INFO - 削峰填谷策略执行结果: {'status': 'executed', 'time_slot': 'normal', 'timestamp': '2026-02-23T17:32:55.334166', 'actions': []}
+2026-02-23 17:33:05,340 - PeakShavingStrategy - INFO - 削峰填谷策略执行结果: {'status': 'executed', 'time_slot': 'normal', 'timestamp': '2026-02-23T17:33:05.340052', 'actions': []}
+2026-02-23 17:33:15,352 - PeakShavingStrategy - INFO - 削峰填谷策略执行结果: {'status': 'executed', 'time_slot': 'normal', 'timestamp': '2026-02-23T17:33:15.352204', 'actions': []}
+2026-02-23 17:33:25,360 - PeakShavingStrategy - INFO - 削峰填谷策略执行结果: {'status': 'executed', 'time_slot': 'normal', 'timestamp': '2026-02-23T17:33:25.360080', 'actions': []}
+2026-02-23 17:33:35,363 - PeakShavingStrategy - INFO - 削峰填谷策略执行结果: {'status': 'executed', 'time_slot': 'normal', 'timestamp': '2026-02-23T17:33:35.363242', 'actions': []}
+2026-02-23 17:33:42,938 - EdgeFusion - INFO - 收到停止信号，正在停止应用...
+2026-02-23 17:33:42,940 - PeakShavingStrategy - INFO - 停止削峰填谷策略
+2026-02-23 17:36:35,357 - EdgeFusion - INFO - 加载配置完成
+2026-02-23 17:36:35,357 - EdgeFusion - INFO - 初始化设备管理器完成
+2026-02-23 17:36:35,373 - EdgeFusion - INFO - 初始化数据库完成
+2026-02-23 17:36:35,373 - EdgeFusion - INFO - 初始化数据采集器完成
+2026-02-23 17:36:35,375 - EdgeFusion - INFO - 初始化策略完成
+2026-02-23 17:36:35,378 - EdgeFusion - INFO - 初始化监控面板完成
+2026-02-23 17:36:35,380 - EdgeFusion - INFO - 启动EdgeFusion应用...
+2026-02-23 17:36:35,380 - DeviceManager - INFO - 连接modbus协议...
+2026-02-23 17:36:39,483 - pymodbus.logging - ERROR - Connection to (localhost, 502) failed: [WinError 10061] 由于目标计算机积极拒绝，无法连接。
+2026-02-23 17:36:39,483 - DeviceManager - WARNING - modbus协议连接失败，将在无此协议模式下运行
+2026-02-23 17:36:39,484 - DeviceManager - INFO - 连接mqtt协议...
+2026-02-23 17:36:43,609 - DeviceManager - WARNING - mqtt协议连接失败，将在无此协议模式下运行
+2026-02-23 17:36:43,611 - DeviceManager - INFO - 连接ocpp协议...
+2026-02-23 17:36:43,612 - DeviceManager - INFO - ocpp协议连接成功
+2026-02-23 17:36:43,612 - DeviceManager - INFO - 通过以下协议发现设备: ['ocpp']
+2026-02-23 17:36:43,612 - DeviceManager - INFO - 通过ocpp协议发现设备...
+2026-02-23 17:36:43,612 - DeviceManager - INFO - 共发现2个设备
+2026-02-23 17:36:43,617 - PeakShavingStrategy - INFO - 启动削峰填谷策略，峰值时段: ['18:00-22:00'], 谷值时段: ['00:00-06:00']
+2026-02-23 17:36:43,618 - EdgeFusion - INFO - EdgeFusion应用启动完成
+2026-02-23 17:36:43,618 - EdgeFusion - INFO - 系统运行中，按Ctrl+C停止
+2026-02-23 17:36:43,618 - PeakShavingStrategy - INFO - 削峰填谷策略执行结果: {'status': 'executed', 'time_slot': 'normal', 'timestamp': '2026-02-23T17:36:43.618924', 'actions': []}
+2026-02-23 17:36:53,633 - PeakShavingStrategy - INFO - 削峰填谷策略执行结果: {'status': 'executed', 'time_slot': 'normal', 'timestamp': '2026-02-23T17:36:53.633525', 'actions': []}
+2026-02-23 17:36:55,968 - werkzeug - INFO - [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5000
+ * Running on http://198.18.0.1:5000
+2026-02-23 17:36:55,969 - werkzeug - INFO - [33mPress CTRL+C to quit[0m
+2026-02-23 17:36:56,011 - werkzeug - INFO - 127.0.0.1 - - [23/Feb/2026 17:36:56] "GET /?ide_webview_request_time=1771839414100 HTTP/1.1" 200 -
+2026-02-23 17:36:56,262 - werkzeug - INFO - 127.0.0.1 - - [23/Feb/2026 17:36:56] "[33mGET /@vite/client HTTP/1.1[0m" 404 -
+2026-02-23 17:37:03,649 - PeakShavingStrategy - INFO - 削峰填谷策略执行结果: {'status': 'executed', 'time_slot': 'normal', 'timestamp': '2026-02-23T17:37:03.649804', 'actions': []}
+2026-02-23 17:37:13,651 - PeakShavingStrategy - INFO - 削峰填谷策略执行结果: {'status': 'executed', 'time_slot': 'normal', 'timestamp': '2026-02-23T17:37:13.651793', 'actions': []}
+2026-02-23 17:37:23,661 - PeakShavingStrategy - INFO - 削峰填谷策略执行结果: {'status': 'executed', 'time_slot': 'normal', 'timestamp': '2026-02-23T17:37:23.661256', 'actions': []}
+2026-02-23 17:37:33,677 - PeakShavingStrategy - INFO - 削峰填谷策略执行结果: {'status': 'executed', 'time_slot': 'normal', 'timestamp': '2026-02-23T17:37:33.677788', 'actions': []}
+2026-02-23 17:37:43,682 - PeakShavingStrategy - INFO - 削峰填谷策略执行结果: {'status': 'executed', 'time_slot': 'normal', 'timestamp': '2026-02-23T17:37:43.682679', 'actions': []}
+2026-02-23 17:37:53,698 - PeakShavingStrategy - INFO - 削峰填谷策略执行结果: {'status': 'executed', 'time_slot': 'normal', 'timestamp': '2026-02-23T17:37:53.698292', 'actions': []}
+2026-02-23 17:38:03,709 - PeakShavingStrategy - INFO - 削峰填谷策略执行结果: {'status': 'executed', 'time_slot': 'normal', 'timestamp': '2026-02-23T17:38:03.709201', 'actions': []}
+2026-02-23 17:38:13,713 - PeakShavingStrategy - INFO - 削峰填谷策略执行结果: {'status': 'executed', 'time_slot': 'normal', 'timestamp': '2026-02-23T17:38:13.713425', 'actions': []}
+2026-02-23 17:38:23,721 - PeakShavingStrategy - INFO - 削峰填谷策略执行结果: {'status': 'executed', 'time_slot': 'normal', 'timestamp': '2026-02-23T17:38:23.721167', 'actions': []}
+2026-02-23 17:38:33,734 - PeakShavingStrategy - INFO - 削峰填谷策略执行结果: {'status': 'executed', 'time_slot': 'normal', 'timestamp': '2026-02-23T17:38:33.734496', 'actions': []}
+2026-02-23 17:38:43,752 - PeakShavingStrategy - INFO - 削峰填谷策略执行结果: {'status': 'executed', 'time_slot': 'normal', 'timestamp': '2026-02-23T17:38:43.752227', 'actions': []}
+2026-02-23 17:38:53,765 - PeakShavingStrategy - INFO - 削峰填谷策略执行结果: {'status': 'executed', 'time_slot': 'normal', 'timestamp': '2026-02-23T17:38:53.765052', 'actions': []}
+2026-02-23 17:39:03,781 - PeakShavingStrategy - INFO - 削峰填谷策略执行结果: {'status': 'executed', 'time_slot': 'normal', 'timestamp': '2026-02-23T17:39:03.781415', 'actions': []}
+2026-02-23 17:39:13,796 - PeakShavingStrategy - INFO - 削峰填谷策略执行结果: {'status': 'executed', 'time_slot': 'normal', 'timestamp': '2026-02-23T17:39:13.796212', 'actions': []}
+2026-02-23 17:39:23,801 - PeakShavingStrategy - INFO - 削峰填谷策略执行结果: {'status': 'executed', 'time_slot': 'normal', 'timestamp': '2026-02-23T17:39:23.801175', 'actions': []}
+2026-02-23 17:39:33,816 - PeakShavingStrategy - INFO - 削峰填谷策略执行结果: {'status': 'executed', 'time_slot': 'normal', 'timestamp': '2026-02-23T17:39:33.816932', 'actions': []}
+2026-02-23 17:39:43,831 - PeakShavingStrategy - INFO - 削峰填谷策略执行结果: {'status': 'executed', 'time_slot': 'normal', 'timestamp': '2026-02-23T17:39:43.831262', 'actions': []}
+2026-02-23 17:39:53,847 - PeakShavingStrategy - INFO - 削峰填谷策略执行结果: {'status': 'executed', 'time_slot': 'normal', 'timestamp': '2026-02-23T17:39:53.847446', 'actions': []}
+2026-02-23 17:40:03,866 - PeakShavingStrategy - INFO - 削峰填谷策略执行结果: {'status': 'executed', 'time_slot': 'normal', 'timestamp': '2026-02-23T17:40:03.866245', 'actions': []}
+2026-02-23 17:40:13,876 - PeakShavingStrategy - INFO - 削峰填谷策略执行结果: {'status': 'executed', 'time_slot': 'normal', 'timestamp': '2026-02-23T17:40:13.876559', 'actions': []}
