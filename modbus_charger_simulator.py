@@ -81,8 +81,73 @@ class ChargerModbusSimulator:
         # 初始化保持寄存器数据
         self._update_registers()
     
+    def _sync_from_registers(self):
+        """从寄存器同步状态到内部变量 - 检测外部写入"""
+        try:
+            # 读取寄存器当前值
+            reg0 = self.store.getValues(3, 0, 1)[0]  # 电压
+            reg1 = self.store.getValues(3, 1, 1)[0]  # 电流
+            reg2 = self.store.getValues(3, 2, 1)[0]  # 功率
+            reg3 = self.store.getValues(3, 3, 1)[0]  # 能量
+            reg4 = self.store.getValues(3, 4, 1)[0]  # 温度
+            reg5 = self.store.getValues(3, 5, 1)[0]  # 状态
+            
+            # 比较并同步
+            expected_voltage = int(self.voltage * 10)
+            expected_current = int(self.current * 10)
+            expected_power = int(self.power)
+            expected_energy = int(self.energy * 100)
+            expected_temp = int(self.temperature * 10)
+            
+            status_code = {
+                "Available": 0,
+                "Charging": 1,
+                "Fault": 2
+            }.get(self.status, 0)
+            
+            # 如果寄存器值与预期不同，说明被外部写入了
+            if reg0 != expected_voltage:
+                self.voltage = reg0 / 10.0
+                print(f"[同步] 外部写入电压: {self.voltage}V")
+            
+            if reg1 != expected_current:
+                self.current = reg1 / 10.0
+                print(f"[同步] 外部写入电流: {self.current}A")
+            
+            if reg2 != expected_power:
+                self.power = reg2
+                print(f"[同步] 外部写入功率: {self.power}W")
+            
+            if reg3 != expected_energy:
+                self.energy = reg3 / 100.0
+                print(f"[同步] 外部写入能量: {self.energy}kWh")
+            
+            if reg4 != expected_temp:
+                self.temperature = reg4 / 10.0
+                print(f"[同步] 外部写入温度: {self.temperature}°C")
+            
+            if reg5 != status_code:
+                new_status = {
+                    0: "Available",
+                    1: "Charging",
+                    2: "Fault"
+                }.get(reg5, self.status)
+                if new_status != self.status:
+                    self.status = new_status
+                    if self.status == "Charging" and not self.charging_start_time:
+                        self.charging_start_time = datetime.now()
+                    elif self.status == "Available":
+                        self.charging_start_time = None
+                    print(f"[同步] 外部写入状态: {self.status}")
+        
+        except Exception as e:
+            print(f"[同步] 错误: {e}")
+    
     def _update_registers(self):
         """更新Modbus寄存器数据"""
+        # 先同步外部写入的寄存器值到内部变量
+        self._sync_from_registers()
+        
         # 状态码: 0=Available, 1=Charging, 2=Fault
         status_code = {
             "Available": 0,
