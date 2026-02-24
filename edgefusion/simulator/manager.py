@@ -1,5 +1,5 @@
 # 设备模拟器管理器
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Any
 from .pv_simulator import PVSimulator
 from .storage_simulator import StorageSimulator
 from .charger_simulator import ChargerSimulator
@@ -139,7 +139,3 @@ class SimulatorManager:
         for device_id, simulator in self.simulators.items():
             info_dict[device_id] = self.get_simulator_info(device_id)
         return info_dict
-
-
-# 导入Any类型
-from typing import Any
