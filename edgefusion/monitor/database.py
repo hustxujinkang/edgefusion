@@ -211,43 +211,27 @@ class Database:
         """获取设备统计信息
         
         Returns:
-            Dict[str, Any]: 设备统计信息
+            Dict[str, Any]: 设备统计信息，格式为 {device_id: data_count}
         """
         try:
             session = self.Session()
             
-            # 获取设备数量
-            device_count = session.query(DeviceData.device_id).distinct().count()
+            # 按设备统计数据条数
+            from sqlalchemy import func
+            stats = session.query(
+                DeviceData.device_id,
+                func.count(DeviceData.id).label('count')
+            ).group_by(DeviceData.device_id).all()
             
-            # 获取数据总条数
-            total_data_count = session.query(DeviceData).count()
-            
-            # 获取各类型设备数量
-            device_types = {}
-            type_records = session.query(
-                DeviceData.device_type,
-                session.query(DeviceData).filter(
-                    DeviceData.device_type == DeviceData.device_type
-                ).distinct(DeviceData.device_id).count().label('count')
-            ).group_by(DeviceData.device_type).all()
-            
-            for record in type_records:
-                device_types[record.device_type] = record.count
+            result = {}
+            for device_id, count in stats:
+                result[device_id] = count
             
             session.close()
-            
-            return {
-                'device_count': device_count,
-                'total_data_count': total_data_count,
-                'device_types': device_types
-            }
+            return result
         except Exception as e:
             print(f"获取设备统计信息失败: {e}")
-            return {
-                'device_count': 0,
-                'total_data_count': 0,
-                'device_types': {}
-            }
+            return {}
     
     def delete_old_data(self, days: int = 7):
         """删除旧数据
