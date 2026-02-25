@@ -352,6 +352,16 @@
                                                 <option value="modbus_device">通用Modbus设备</option>
                                             </select>
                                         </div>
+                                        <div class="mb-3">
+                                            <label class="form-label fw-bold">设备型号</label>
+                                            <select class="form-select" id="deviceModel">
+                                                <option value="">通用设备（无型号）</option>
+                                                <option value="generic_charger">通用充电桩</option>
+                                                <option value="xj_dc_120kw">许继 120kW 直流桩</option>
+                                                <option value="xj_dc_240kw">许继 240kW 直流桩</option>
+                                            </select>
+                                            <div class="form-text">选择型号将启用对应的点表配置</div>
+                                        </div>
                                         <div class="row">
                                             <div class="col-md-6 mb-3">
                                                 <label class="form-label fw-bold">主机地址</label>
@@ -679,16 +689,22 @@
             }
             
             let html = '<div class="table-responsive"><table class="table table-hover">';
-            html += '<thead><tr><th>设备ID</th><th>类型</th><th>地址</th><th>状态</th><th>操作</th></tr></thead><tbody>';
+            html += '<thead><tr><th>设备ID</th><th>类型</th><th>型号</th><th>地址</th><th>状态</th><th>操作</th></tr></thead><tbody>';
             
             for (const device of data) {
                 const statusBadge = device.status === 'online' 
                     ? '<span class="badge bg-success"><i class="bi bi-check-circle me-1"></i>在线</span>'
                     : '<span class="badge bg-danger"><i class="bi bi-x-circle me-1"></i>离线</span>';
                 
+                // 【新增】型号标签
+                const modelBadge = device.model 
+                    ? '<span class="badge bg-info">' + device.model + '</span>' 
+                    : '<span class="text-muted">-</span>';
+                
                 html += '<tr>';
                 html += '<td><code>' + device.device_id + '</code></td>';
                 html += '<td><span class="badge bg-secondary">' + (device.type || '-') + '</span></td>';
+                html += '<td>' + modelBadge + '</td>';  // 【新增】型号列
                 html += '<td><code>' + device.host + ':' + device.port + '</code></td>';
                 html += '<td>' + statusBadge + '</td>';
                 html += '<td>';
@@ -747,11 +763,19 @@
             
             const deviceId = document.getElementById('deviceId').value;
             const deviceType = document.getElementById('deviceType').value;
+            const deviceModel = document.getElementById('deviceModel').value;  // 【新增】型号
             const host = document.getElementById('modbusHost').value;
             const port = parseInt(document.getElementById('modbusPort').value);
             const unitId = parseInt(document.getElementById('modbusUnitId').value);
             
-            const result = await postJSON('/api/devices/add-modbus', { device_id: deviceId, device_type: deviceType, host, port, unit_id: unitId });
+            const result = await postJSON('/api/devices/add-modbus', { 
+                device_id: deviceId, 
+                device_type: deviceType, 
+                model: deviceModel,  // 【新增】型号
+                host, 
+                port, 
+                unit_id: unitId 
+            });
             
             if (result && result.success) {
                 alert('设备添加成功！');

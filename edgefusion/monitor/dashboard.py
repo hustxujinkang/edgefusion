@@ -139,6 +139,7 @@ class Dashboard:
                 port = data.get('port', 502)
                 unit_id = data.get('unit_id', 1)
                 device_type = data.get('device_type', 'modbus_device')
+                model = data.get('model')  # 【新增】型号标识
                 
                 if not device_id:
                     return jsonify({'success': False, 'message': '设备ID不能为空'})
@@ -156,6 +157,7 @@ class Dashboard:
                 device_info = {
                     'device_id': device_id,
                     'type': device_type,
+                    'model': model,  # 【新增】型号标识
                     'protocol': 'modbus',
                     'host': host,
                     'port': port,
