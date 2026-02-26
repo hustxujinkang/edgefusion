@@ -79,6 +79,30 @@ class ModbusProtocol(ProtocolBase):
             print(f"Modbus读取失败: {e}")
             return None
     
+    def _read_registers(self, addr: int, count: int, slave_id: int = 1) -> Optional[list]:
+        """读取多个保持寄存器（内部方法）
+        
+        Args:
+            addr: 寄存器起始地址
+            count: 读取数量
+            slave_id: 从站ID
+            
+        Returns:
+            Optional[list]: 寄存器值列表，失败返回None
+        """
+        if not self.connected:
+            return None
+        
+        try:
+            response = self.client.read_holding_registers(addr, count, slave=slave_id)
+            if response.isError():
+                print(f"读取寄存器失败: addr={addr}, count={count}")
+                return None
+            return response.registers
+        except Exception as e:
+            print(f"读取寄存器异常: {e}")
+            return None
+    
     def write_data(self, device_id: str, register: str, value: Any) -> bool:
         """写入Modbus设备数据
         

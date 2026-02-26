@@ -9,6 +9,7 @@ from ..strategy import StrategyBase
 from .collector import DataCollector
 from .database import Database
 from ..protocol import ModbusProtocol
+from ..point_tables import get_gun_registers, get_point_table
 
 
 class Dashboard:
@@ -238,6 +239,73 @@ class Dashboard:
                     return jsonify({'success': True, 'message': '写入成功'})
                 else:
                     return jsonify({'success': False, 'message': '写入失败'})
+            except Exception as e:
+                return jsonify({'success': False, 'message': str(e)})
+        
+        # 【新增】按型号点表读取枪数据
+        @self.app.route('/api/devices/<device_id>/gun-data', methods=['GET'])
+        def read_gun_data(device_id):
+            try:
+                gun_id = int(request.args.get('gun_id', 1))
+                
+                if device_id not in self.connected_devices:
+                    return jsonify({'success': False, 'message': '设备不存在'})
+                
+                device_info = self.connected_devices[device_id]
+                model = device_info.get('model', 'generic_charger')
+                
+                # 获取该型号的点表配置
+                gun_regs = get_gun_registers(model, gun_id)
+                if not gun_regs:
+                    return jsonify({'success': False, 'message': f'型号 {model} 不支持枪{gun_id}'})
+                
+                # 连接设备
+                config = {
+                    'host': device_info['host'],
+                    'port': device_info['port'],
+                    'timeout': 5
+                }
+                protocol = ModbusProtocol(config)
+                if not protocol.connect():
+                    return jsonify({'success': False, 'message': '设备连接失败'})
+                
+                # 按点表读取所有寄存器
+                result = {'gun_id': gun_id, 'model': model}
+                for name, cfg in gun_regs.items():
+                    try:
+                        addr = cfg['addr']
+                        reg_type = cfg.get('type', 'u16')
+                        scale = cfg.get('scale', 1)
+                        unit = cfg.get('unit', '')
+                        
+                        # 计算读取数量（u32读2个寄存器，u16读1个）
+                        count = 2 if reg_type == 'u32' else 1
+                        
+                        # 读取寄存器（传入正确的 slave_id）
+                        values = protocol._read_registers(addr, count, slave_id=device_info['unit_id'])
+                        if values:
+                            if reg_type == 'u32':
+                                # 合并两个16位寄存器为32位
+                                raw_value = (values[1] << 16) | values[0]
+                            else:
+                                raw_value = values[0]
+                            
+                            # 应用缩放因子
+                            scaled_value = raw_value * scale
+                            
+                            result[name] = {
+                                'value': round(scaled_value, 3),
+                                'unit': unit,
+                                'raw': raw_value
+                            }
+                        else:
+                            result[name] = {'value': None, 'error': '读取失败'}
+                    except Exception as e:
+                        result[name] = {'value': None, 'error': str(e)}
+                
+                protocol.disconnect()
+                return jsonify({'success': True, 'data': result})
+                
             except Exception as e:
                 return jsonify({'success': False, 'message': str(e)})
         

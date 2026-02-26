@@ -18,6 +18,10 @@ except Exception as e:
     class Database:
         def __init__(self, *args, **kwargs):
             pass
+        
+        def insert_data(self, data):
+            """兼容模式：不保存数据"""
+            return True
     
     class Dashboard:
         def __init__(self, *args, **kwargs):

@@ -461,6 +461,29 @@
                                 </div>
                             </div>
                             <hr>
+                            <!-- 【新增】枪数据显示面板 -->
+                            <div class="row mt-4">
+                                <div class="col-12">
+                                    <h6 class="fw-bold mb-3"><i class="bi bi-ev-station me-2 text-primary"></i>枪数据监控</h6>
+                                    <div class="mb-3">
+                                        <label class="form-label">选择枪号</label>
+                                        <select class="form-select" id="gunSelector" onchange="loadGunData()" style="width: auto; display: inline-block;">
+                                            <option value="1">枪 1</option>
+                                            <option value="2">枪 2</option>
+                                        </select>
+                                        <button class="btn btn-sm btn-outline-primary ms-2" onclick="loadGunData()">
+                                            <i class="bi bi-arrow-repeat"></i> 刷新
+                                        </button>
+                                    </div>
+                                    <div id="gunDataPanel">
+                                        <div class="text-center text-muted py-4">
+                                            <div class="spinner-border spinner-border-sm"></div>
+                                            <p class="mt-2">点击刷新按钮加载枪数据</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <hr>
                             <div class="row mt-4">
                                 <div class="col-12">
                                     <h6 class="fw-bold mb-3"><i class="bi bi-grid-3x3 me-2 text-info"></i>充电桩寄存器快速访问</h6>
@@ -723,6 +746,9 @@
             document.getElementById('deviceDetailCard').style.display = 'block';
             document.getElementById('readResult').innerHTML = '';
             document.getElementById('writeResult').innerHTML = '';
+            // 【新增】加载枪数据
+            document.getElementById('gunDataPanel').innerHTML = '<div class="text-center py-4"><div class="spinner-border spinner-border-sm"></div><p class="mt-2">加载中...</p></div>';
+            loadGunData();
         }
         
         async function deleteDevice(deviceId) {
@@ -739,6 +765,69 @@
             } else {
                 alert('删除失败: ' + (result ? result.message : '未知错误'));
             }
+        }
+        
+        // 【新增】加载枪数据
+        async function loadGunData() {
+            if (!currentDeviceId) return;
+            
+            const gunId = document.getElementById('gunSelector').value;
+            const panel = document.getElementById('gunDataPanel');
+            
+            panel.innerHTML = '<div class="text-center py-4"><div class="spinner-border spinner-border-sm"></div><p class="mt-2">加载中...</p></div>';
+            
+            const result = await fetchJSON(`/api/devices/${currentDeviceId}/gun-data?gun_id=${gunId}`);
+            
+            if (!result || !result.success) {
+                panel.innerHTML = '<div class="alert alert-warning">' + (result ? result.message : '加载失败') + '</div>';
+                return;
+            }
+            
+            const data = result.data;
+            
+            // 状态码映射
+            const stateMap = {
+                0: { text: '空闲', class: 'badge bg-secondary' },
+                1: { text: '已连接', class: 'badge bg-info' },
+                2: { text: '启动中', class: 'badge bg-warning' },
+                3: { text: '充电中', class: 'badge bg-success' },
+                4: { text: '已完成', class: 'badge bg-primary' },
+                5: { text: '故障', class: 'badge bg-danger' }
+            };
+            
+            let html = '<div class="table-responsive"><table class="table table-sm">';
+            html += '<thead><tr><th>参数</th><th>数值</th><th>原始值</th></tr></thead><tbody>';
+            
+            for (const [key, item] of Object.entries(data)) {
+                if (key === 'gun_id' || key === 'model') continue;
+                
+                if (item && item.value !== undefined && item.value !== null) {
+                    let displayValue = item.value;
+                    let unit = item.unit || '';
+                    
+                    // 状态特殊显示
+                    if (key === 'state' && stateMap[item.value]) {
+                        const state = stateMap[item.value];
+                        displayValue = `<span class="${state.class}">${state.text}</span>`;
+                        unit = '';
+                    }
+                    
+                    html += `<tr>
+                        <td><code>${key}</code></td>
+                        <td>${displayValue} ${unit}</td>
+                        <td class="text-muted">${item.raw}</td>
+                    </tr>`;
+                } else {
+                    html += `<tr>
+                        <td><code>${key}</code></td>
+                        <td class="text-danger">读取失败</td>
+                        <td class="text-muted">-</td>
+                    </tr>`;
+                }
+            }
+            
+            html += '</tbody></table></div>';
+            panel.innerHTML = html;
         }
         
         async function testModbusConnection() {

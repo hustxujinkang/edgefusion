@@ -19,19 +19,21 @@ from pymodbus.device import ModbusDeviceIdentification
 
 
 class ChargerModbusSimulator:
-    """充电桩Modbus TCP模拟器"""
+    """充电桩Modbus TCP模拟器 - 支持多型号"""
     
-    def __init__(self, host="0.0.0.0", port=502, unit_id=1):
+    def __init__(self, host="0.0.0.0", port=502, unit_id=1, model="generic"):
         """初始化模拟器
         
         Args:
             host: 监听地址
             port: 监听端口
             unit_id: Modbus单元ID
+            model: 型号标识，如 "generic" 或 "xj_dc_120kw"
         """
         self.host = host
         self.port = port
         self.unit_id = unit_id
+        self.model = model
         self.running = False
         self.server_thread = None
         
@@ -45,21 +47,26 @@ class ChargerModbusSimulator:
         self.session_time = 0  # 充电会话时间 (秒)
         self.charging_start_time = None
         
-        # Modbus寄存器映射
-        # 保持寄存器 (4x区域)
-        # 地址 0-9: 基本信息
-        # 地址 10-19: 电气参数
-        # 地址 20-29: 状态控制
-        
+        # 根据型号初始化寄存器
         self._init_datastore()
     
     def _init_datastore(self):
-        """初始化Modbus数据存储"""
+        """初始化Modbus数据存储 - 根据型号分配地址空间"""
+        # 根据型号决定地址空间大小
+        if self.model.startswith('xj_'):
+            # 许继型号：需要支持到 0x2100+（约 8500 个地址）
+            ir_size = 0x3000  # 输入寄存器
+            hr_size = 0x3000  # 保持寄存器
+        else:
+            # 通用型号：小地址空间
+            ir_size = 100
+            hr_size = 100
+        
         # 输入寄存器 (3x区域) - 只读
-        ir_block = ModbusSequentialDataBlock(0, [0] * 100)
+        ir_block = ModbusSequentialDataBlock(0, [0] * ir_size)
         
         # 保持寄存器 (4x区域) - 读写
-        hr_block = ModbusSequentialDataBlock(0, [0] * 100)
+        hr_block = ModbusSequentialDataBlock(0, [0] * hr_size)
         
         # 线圈 (0x区域) - 读写位
         co_block = ModbusSequentialDataBlock(0, [False] * 100)
@@ -78,7 +85,7 @@ class ChargerModbusSimulator:
         # 创建服务器上下文
         self.context = ModbusServerContext(slaves=self.store, single=True)
         
-        # 初始化保持寄存器数据
+        # 初始化寄存器数据（按型号）
         self._update_registers()
     
     def _sync_from_registers(self):
@@ -155,7 +162,15 @@ class ChargerModbusSimulator:
             "Fault": 2
         }.get(self.status, 0)
         
-        # 保持寄存器映射
+        if self.model.startswith('xj_'):
+            # 许继型号寄存器布局
+            self._update_xj_registers(status_code)
+        else:
+            # 通用型号寄存器布局
+            self._update_generic_registers(status_code)
+    
+    def _update_generic_registers(self, status_code):
+        """通用型号寄存器更新（地址 0-20）"""
         registers = {
             0: int(self.voltage * 10),  # 电压 (x10)
             1: int(self.current * 10),  # 电流 (x10)
@@ -167,10 +182,36 @@ class ChargerModbusSimulator:
             10: 1,  # 设备类型: 1=充电桩
             11: 100,  # 额定功率 (100kW)
         }
-        
-        # 更新保持寄存器
         for addr, value in registers.items():
             self.store.setValues(3, addr, [value])
+    
+    def _update_xj_registers(self, status_code):
+        """许继型号寄存器更新（地址 0x1000, 0x2000, 0x2100）"""
+        # 整桩信息 (0x1000)
+        self.store.setValues(3, 0x1000, [2])       # 枪个数
+        self.store.setValues(3, 0x1001, [120])     # 最大功率 120kW
+        
+        # 枪1信息 (0x2000)
+        gun1_base = 0x2000
+        self.store.setValues(3, gun1_base + 0, [status_code])  # 状态
+        self.store.setValues(3, gun1_base + 1, [0])           # 模式: 充电
+        self.store.setValues(3, gun1_base + 2, [0, 0])        # 告警 (u32)
+        self.store.setValues(3, gun1_base + 4, [0, 0])        # 故障 (u32)
+        self.store.setValues(3, gun1_base + 16, [int(self.voltage * 10)])  # 电压
+        self.store.setValues(3, gun1_base + 17, [int(self.current * 100)])  # 电流 (x100)
+        # 功率 (u32, 0.001kW单位)
+        power_raw = int(self.power * 0.001)  # W -> 0.001kW
+        self.store.setValues(3, gun1_base + 14, [power_raw & 0xFFFF, (power_raw >> 16) & 0xFFFF])
+        self.store.setValues(3, gun1_base + 18, [85])         # SOC 85%
+        self.store.setValues(3, gun1_base + 19, [int(self.temperature)])  # 温度
+        
+        # 枪2信息 (0x2100) - 默认空闲
+        gun2_base = 0x2100
+        self.store.setValues(3, gun2_base + 0, [0])  # 状态: 空闲
+        self.store.setValues(3, gun2_base + 1, [0])  # 模式
+        self.store.setValues(3, gun2_base + 16, [2200])  # 电压 220V
+        self.store.setValues(3, gun2_base + 17, [0])     # 电流 0A
+        self.store.setValues(3, gun2_base + 18, [0])     # SOC 0%
     
     def _simulation_loop(self):
         """模拟循环 - 在后台更新状态"""
@@ -236,8 +277,13 @@ class ChargerModbusSimulator:
         print("=" * 60)
         print("Modbus/TCP 充电桩模拟器")
         print("=" * 60)
+        print(f"型号: {self.model}")
         print(f"监听地址: {self.host}:{self.port}")
         print(f"单元ID: {self.unit_id}")
+        if self.model.startswith('xj_'):
+            print("寄存器布局: 许继协议 (0x1000/0x2000/0x2100)")
+        else:
+            print("寄存器布局: 通用协议 (地址 0-20)")
         print("=" * 60)
         
         self.running = True
@@ -300,6 +346,11 @@ def main():
         default=1,
         help="Modbus单元ID (默认: 1)",
     )
+    parser.add_argument(
+        "--model",
+        default="generic",
+        help="充电桩型号: generic(通用), xj_dc_120kw(许继120kW) (默认: generic)",
+    )
     
     args = parser.parse_args()
     
@@ -307,6 +358,7 @@ def main():
         host=args.host,
         port=args.port,
         unit_id=args.unit_id,
+        model=args.model,
     )
     
     try:
