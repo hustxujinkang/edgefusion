@@ -37,13 +37,55 @@ class ChargerModbusSimulator:
         self.running = False
         self.server_thread = None
         
-        # 充电桩状态
-        self.status = "Available"  # Available, Charging, Fault
-        self.power = 0.0  # 充电功率 (W)
+        # 充电桩状态（许继型号：支持双枪）
+        if self.model.startswith('xj_'):
+            # 许继型号：双枪独立状态
+            self.gun_count = 2
+            self.guns = {
+                1: {
+                    'status': 'Available',      # Available, Charging, Fault
+                    'power': 0.0,               # kW
+                    'voltage': 0.0,             # V
+                    'current': 0.0,             # A
+                    'soc': 0,                   # %
+                    'temperature': 25.0,        # °C
+                    'power_limit': 120,         # kW
+                    'target_soc': 100,          # %
+                },
+                2: {
+                    'status': 'Available',
+                    'power': 0.0,
+                    'voltage': 0.0,
+                    'current': 0.0,
+                    'soc': 0,
+                    'temperature': 25.0,
+                    'power_limit': 120,
+                    'target_soc': 100,
+                }
+            }
+        else:
+            # 通用型号：单枪
+            self.gun_count = 1
+            self.guns = {
+                1: {
+                    'status': 'Available',
+                    'power': 0.0,
+                    'voltage': 220.0,
+                    'current': 0.0,
+                    'soc': 0,
+                    'temperature': 25.0,
+                    'power_limit': 7,  # 7kW
+                    'target_soc': 100,
+                }
+            }
+        
+        # 兼容旧属性（通用型号使用gun1）
+        self.status = self.guns[1]['status']
+        self.power = self.guns[1]['power']
+        self.voltage = self.guns[1]['voltage']
+        self.current = self.guns[1]['current']
+        self.temperature = self.guns[1]['temperature']
         self.energy = 0.0  # 累计充电量 (kWh)
-        self.voltage = 220.0  # 电压 (V)
-        self.current = 0.0  # 电流 (A)
-        self.temperature = 25.0  # 温度 (°C)
         self.session_time = 0  # 充电会话时间 (秒)
         self.charging_start_time = None
         
@@ -54,9 +96,9 @@ class ChargerModbusSimulator:
         """初始化Modbus数据存储 - 根据型号分配地址空间"""
         # 根据型号决定地址空间大小
         if self.model.startswith('xj_'):
-            # 许继型号：需要支持到 0x2100+（约 8500 个地址）
-            ir_size = 0x3000  # 输入寄存器
-            hr_size = 0x3000  # 保持寄存器
+            # 许继型号：需要支持到 0x4000+（控制寄存器区，写12个寄存器）
+            ir_size = 0x4010  # 输入寄存器（大于 0x400C）
+            hr_size = 0x4010  # 保持寄存器（大于 0x400C）
         else:
             # 通用型号：小地址空间
             ir_size = 100
@@ -146,9 +188,73 @@ class ChargerModbusSimulator:
                     elif self.status == "Available":
                         self.charging_start_time = None
                     print(f"[同步] 外部写入状态: {self.status}")
+            
+            # 【新增】许继型号：读取控制寄存器
+            if self.model.startswith('xj_'):
+                self._sync_control_registers()
         
         except Exception as e:
             print(f"[同步] 错误: {e}")
+    
+    def _sync_control_registers(self):
+        """同步控制寄存器（许继型号）- 地址0x4000"""
+        try:
+            # 读取控制区 (0x4000开始，12个寄存器)
+            # 格式: [枪号, 控制类型, 参数低, 参数高, ...预留...]
+            regs = self.store.getValues(3, 0x4000, 12)
+            if not regs or len(regs) < 12:
+                return  # 读取失败，跳过
+            
+            gun_id = regs[0]
+            ctrl_type = regs[1]  # 0x01=百分比, 0x02=绝对值
+            param_low = regs[2]
+            param_high = regs[3]
+            param = (param_high << 16) | param_low
+            
+            # 只处理枪1和枪2
+            if gun_id not in [1, 2]:
+                return
+            
+            gun = self.guns[gun_id]
+            
+            # 处理控制命令
+            # 控制类型: 0x01=百分比, 0x02=绝对值功率
+            
+            if param == 0xFFFFFFFF:
+                # 急停
+                gun['status'] = 'Fault'
+                gun['power'] = 0
+                gun['current'] = 0
+                print(f"[{datetime.now().strftime('%H:%M:%S')}] 枪{gun_id} 急停故障")
+            elif ctrl_type == 0x02 and param == 0:
+                # 功率设为0 = 停止充电或清除故障
+                if gun['status'] == 'Fault':
+                    gun['status'] = 'Available'
+                    print(f"[{datetime.now().strftime('%H:%M:%S')}] 枪{gun_id} 故障清除")
+                elif gun['status'] == 'Charging':
+                    gun['status'] = 'Available'
+                    gun['power'] = 0
+                    gun['current'] = 0
+                    print(f"[{datetime.now().strftime('%H:%M:%S')}] 枪{gun_id} 停止充电")
+            elif ctrl_type == 0x02 and gun['status'] in ['Available', 'Fault']:
+                # 绝对值功率控制 = 开始充电（并设置功率限制）
+                power_kw = param * 0.001  # 参数是0.001kW单位
+                gun['power_limit'] = min(power_kw, 120)  # 最大120kW
+                gun['status'] = 'Charging'
+                gun['power'] = 0  # 从0开始，逐步上升
+                gun['soc'] = max(10, gun['soc'])
+                gun['voltage'] = 380
+                print(f"[{datetime.now().strftime('%H:%M:%S')}] 枪{gun_id} 开始充电, 功率限制{gun['power_limit']}kW")
+            elif ctrl_type == 0x02 and gun['status'] == 'Charging':
+                # 运行中调整功率
+                power_kw = param * 0.001
+                gun['power_limit'] = min(power_kw, 120)
+            
+            # 清空控制寄存器（表示已处理）
+            self.store.setValues(3, 0x4000, [0] * 12)
+                
+        except Exception as e:
+            print(f"[控制寄存器同步] 错误: {e}")
     
     def _update_registers(self):
         """更新Modbus寄存器数据"""
@@ -187,31 +293,43 @@ class ChargerModbusSimulator:
     
     def _update_xj_registers(self, status_code):
         """许继型号寄存器更新（地址 0x1000, 0x2000, 0x2100）"""
+        # 状态码映射
+        state_map = {'Available': 0, 'Charging': 3, 'Fault': 5}
+        
         # 整桩信息 (0x1000)
         self.store.setValues(3, 0x1000, [2])       # 枪个数
         self.store.setValues(3, 0x1001, [120])     # 最大功率 120kW
         
         # 枪1信息 (0x2000)
+        gun1 = self.guns[1]
         gun1_base = 0x2000
-        self.store.setValues(3, gun1_base + 0, [status_code])  # 状态
+        self.store.setValues(3, gun1_base + 0, [state_map.get(gun1['status'], 0)])  # 状态
         self.store.setValues(3, gun1_base + 1, [0])           # 模式: 充电
         self.store.setValues(3, gun1_base + 2, [0, 0])        # 告警 (u32)
         self.store.setValues(3, gun1_base + 4, [0, 0])        # 故障 (u32)
-        self.store.setValues(3, gun1_base + 16, [int(self.voltage * 10)])  # 电压
-        self.store.setValues(3, gun1_base + 17, [int(self.current * 100)])  # 电流 (x100)
+        self.store.setValues(3, gun1_base + 16, [int(gun1['voltage'] * 10)])  # 电压 (x0.1V)
+        self.store.setValues(3, gun1_base + 17, [int(gun1['current'] * 100)])  # 电流 (x0.01A)
         # 功率 (u32, 0.001kW单位)
-        power_raw = int(self.power * 0.001)  # W -> 0.001kW
+        power_raw = int(gun1['power'] * 1000)  # kW -> 0.001kW
         self.store.setValues(3, gun1_base + 14, [power_raw & 0xFFFF, (power_raw >> 16) & 0xFFFF])
-        self.store.setValues(3, gun1_base + 18, [85])         # SOC 85%
-        self.store.setValues(3, gun1_base + 19, [int(self.temperature)])  # 温度
+        self.store.setValues(3, gun1_base + 18, [int(gun1['soc'])])  # SOC
+        self.store.setValues(3, gun1_base + 19, [int(gun1['temperature'])])  # 温度
         
-        # 枪2信息 (0x2100) - 默认空闲
+        # 枪2信息 (0x2100)
+        gun2 = self.guns[2]
         gun2_base = 0x2100
-        self.store.setValues(3, gun2_base + 0, [0])  # 状态: 空闲
+        self.store.setValues(3, gun2_base + 0, [state_map.get(gun2['status'], 0)])  # 状态
         self.store.setValues(3, gun2_base + 1, [0])  # 模式
-        self.store.setValues(3, gun2_base + 16, [2200])  # 电压 220V
-        self.store.setValues(3, gun2_base + 17, [0])     # 电流 0A
-        self.store.setValues(3, gun2_base + 18, [0])     # SOC 0%
+        self.store.setValues(3, gun2_base + 16, [int(gun2['voltage'] * 10)])  # 电压
+        self.store.setValues(3, gun2_base + 17, [int(gun2['current'] * 100)])  # 电流
+        power_raw2 = int(gun2['power'] * 1000)
+        self.store.setValues(3, gun2_base + 14, [power_raw2 & 0xFFFF, (power_raw2 >> 16) & 0xFFFF])
+        self.store.setValues(3, gun2_base + 18, [int(gun2['soc'])])  # SOC
+        self.store.setValues(3, gun2_base + 19, [int(gun2['temperature'])])  # 温度
+        
+        # 控制寄存器区初始化（0x4000-0x400B，共12个寄存器）
+        # 许继协议：控制命令写这个区域
+        self.store.setValues(3, 0x4000, [0] * 12)
     
     def _simulation_loop(self):
         """模拟循环 - 在后台更新状态"""
@@ -226,23 +344,75 @@ class ChargerModbusSimulator:
     
     def _update_state(self):
         """更新充电桩状态"""
-        if self.status == "Charging":
-            # 充电中，更新参数
-            self.power = 7000 + (time.time() % 1000)  # 7-8kW波动
-            self.current = self.power / self.voltage
-            self.energy += self.power / 3600000  # Wh -> kWh
-            self.temperature = 25 + (self.power / 1000)  # 温度随功率上升
-            
-            if self.charging_start_time:
-                self.session_time = int(
-                    (datetime.now() - self.charging_start_time).total_seconds()
-                )
+        if self.model.startswith('xj_'):
+            # 许继型号：更新每把枪的状态
+            for gun_id in [1, 2]:
+                self._update_gun_state(gun_id)
+            # 同步到旧属性（兼容）- gun['power']是kW，转换成W
+            self.status = self.guns[1]['status']
+            self.power = self.guns[1]['power'] * 1000  # kW -> W
+            self.voltage = self.guns[1]['voltage']
+            self.current = self.guns[1]['current']
+            self.temperature = self.guns[1]['temperature']
+        else:
+            # 通用型号
+            if self.status == "Charging":
+                self.power = 7000 + (time.time() % 1000)
+                self.current = self.power / self.voltage
+                self.energy += self.power / 3600000
+                self.temperature = 25 + (self.power / 1000)
+            elif self.status == "Available":
+                self.power = 0.0
+                self.current = 0.0
+                self.temperature = 25.0 + (time.time() % 5)
+    
+    def _update_gun_state(self, gun_id):
+        """更新单枪状态（许继型号）"""
+        gun = self.guns[gun_id]
         
-        elif self.status == "Available":
+        if gun['status'] == 'Charging':
+            # 目标功率
+            target_power = gun['power_limit']
+            
+            # 功率逐步上升（模拟启动过程），每秒增加3kW，约40秒到满功率
+            if gun['power'] < target_power * 0.95:
+                gun['power'] += 3.0
+            else:
+                gun['power'] = target_power + (time.time() % 4 - 2)  # 小幅波动 ±2kW
+            
+            gun['power'] = min(gun['power'], target_power)
+            
+            # 计算电气参数
+            gun['voltage'] = 380.0
+            gun['current'] = (gun['power'] * 1000) / gun['voltage']
+            gun['temperature'] = 25 + (gun['power'] / target_power) * 15  # 25-40度
+            
+            # SOC上升
+            if gun['soc'] < gun['target_soc']:
+                gun['soc'] += 0.5  # 每秒+0.5%
+                if gun['soc'] > 100:
+                    gun['soc'] = 100
+            else:
+                # 达到目标SOC，自动停止
+                gun['status'] = 'Available'
+                gun['power'] = 0
+                print(f"[{datetime.now().strftime('%H:%M:%S')}] 枪{gun_id} 达到目标SOC，自动停止")
+        
+        elif gun['status'] == 'Available':
             # 空闲状态
-            self.power = 0.0
-            self.current = 0.0
-            self.temperature = 25.0 + (time.time() % 5)  # 轻微波动
+            gun['power'] = 0.0
+            gun['current'] = 0.0
+            if gun['soc'] == 0:
+                gun['voltage'] = 0
+            else:
+                gun['voltage'] = 220.0
+            gun['temperature'] = 25.0 + (time.time() % 3)
+        
+        elif gun['status'] == 'Fault':
+            # 故障状态
+            gun['power'] = 0.0
+            gun['current'] = 0.0
+            gun['temperature'] = max(25, gun['temperature'] - 0.5)  # 降温
     
     def start_charging(self):
         """开始充电"""

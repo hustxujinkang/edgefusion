@@ -112,13 +112,20 @@ class Dashboard:
                 host = data.get('host', 'localhost')
                 port = data.get('port', 502)
                 unit_id = data.get('unit_id', 1)
+                model = data.get('model', 'generic_charger')  # 【新增】型号
                 
                 config = {'host': host, 'port': port, 'timeout': 5}
                 protocol = ModbusProtocol(config)
                 
                 if protocol.connect():
-                    # 尝试读取一个寄存器验证连接
-                    test_value = protocol.read_data(str(unit_id), '0')
+                    # 【修改】根据型号选择测试寄存器
+                    if model.startswith('xj_'):
+                        # 许继型号：读整桩信息 0x1000（枪个数）
+                        test_value = protocol.read_data(str(unit_id), '4096')  # 0x1000 = 4096
+                    else:
+                        # 通用型号：读地址 0（电压）
+                        test_value = protocol.read_data(str(unit_id), '0')
+                    
                     protocol.disconnect()
                     return jsonify({
                         'success': True, 
@@ -313,6 +320,64 @@ class Dashboard:
         @self.app.route('/api/devices/connected', methods=['GET'])
         def get_connected_devices():
             return jsonify(list(self.connected_devices.values()))
+        
+        # 【新增】设备控制API
+        @self.app.route('/api/devices/<device_id>/control', methods=['POST'])
+        def control_device(device_id):
+            """设备控制API"""
+            try:
+                data = request.get_json()
+                action = data.get('action')  # start_charging/stop_charging/set_power/emergency_stop/clear_fault
+                gun_id = data.get('gun_id', 1)
+                params = data.get('params', {})
+                
+                if device_id not in self.connected_devices:
+                    return jsonify({'success': False, 'message': '设备不存在'})
+                
+                device_info = self.connected_devices[device_id]
+                
+                # 初始化Modbus连接
+                from ..devices.charger_controller import ChargerController
+                config = {
+                    'host': device_info['host'],
+                    'port': device_info['port'],
+                    'timeout': 5
+                }
+                protocol = ModbusProtocol(config)
+                
+                if not protocol.connect():
+                    return jsonify({'success': False, 'message': '设备连接失败'})
+                
+                controller = ChargerController(device_info, protocol)
+                
+                # 执行控制命令
+                result = False
+                if action == 'start_charging':
+                    result = controller.start_charging(gun_id)
+                elif action == 'stop_charging':
+                    result = controller.stop_charging(gun_id)
+                elif action == 'set_power':
+                    power = params.get('power_kw', 120)
+                    result = controller.set_power_limit(gun_id, power)
+                elif action == 'set_soc':
+                    soc = params.get('target_soc', 100)
+                    result = controller.set_target_soc(gun_id, soc)
+                elif action == 'emergency_stop':
+                    result = controller.emergency_stop(gun_id)
+                elif action == 'clear_fault':
+                    result = controller.clear_fault(gun_id)
+                else:
+                    return jsonify({'success': False, 'message': f'未知操作: {action}'})
+                
+                protocol.disconnect()
+                
+                return jsonify({
+                    'success': result,
+                    'message': '操作成功' if result else '操作失败'
+                })
+                
+            except Exception as e:
+                return jsonify({'success': False, 'message': str(e)})
         
         # 删除设备
         @self.app.route('/api/devices/<device_id>', methods=['DELETE'])

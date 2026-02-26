@@ -103,6 +103,33 @@ class ModbusProtocol(ProtocolBase):
             print(f"读取寄存器异常: {e}")
             return None
     
+    def _write_registers(self, addr: int, values: list, slave_id: int = 1) -> bool:
+        """写多个保持寄存器（内部方法）
+        
+        Args:
+            addr: 寄存器起始地址
+            values: 要写入的寄存器值列表
+            slave_id: 从站ID
+            
+        Returns:
+            bool: 是否成功
+        """
+        if not self.connected:
+            return False
+        
+        try:
+            from pymodbus.payload import BinaryPayloadBuilder
+            from pymodbus.constants import Endian
+            
+            response = self.client.write_registers(addr, values, slave=slave_id)
+            if response.isError():
+                print(f"写寄存器失败: addr={addr}, values={values}")
+                return False
+            return True
+        except Exception as e:
+            print(f"写寄存器异常: {e}")
+            return False
+    
     def write_data(self, device_id: str, register: str, value: Any) -> bool:
         """写入Modbus设备数据
         

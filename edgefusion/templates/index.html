@@ -436,8 +436,10 @@
                                     <h6 class="fw-bold mb-3"><i class="bi bi-arrow-down-circle me-2 text-success"></i>读取寄存器</h6>
                                     <div class="mb-3">
                                         <label class="form-label">寄存器地址</label>
-                                        <input type="number" class="form-control" id="readRegister" value="0">
-                                        <div class="form-text">例如: 0=电压, 2=功率, 5=状态</div>
+                                        <select class="form-select" id="readRegister">
+                                            <option value="">请选择...</option>
+                                        </select>
+                                        <div class="form-text" id="readRegisterDesc">选择要读取的寄存器</div>
                                     </div>
                                     <button class="btn btn-success w-100" onclick="readRegister()">
                                         <i class="bi bi-download me-1"></i>读取
@@ -448,7 +450,9 @@
                                     <h6 class="fw-bold mb-3"><i class="bi bi-arrow-up-circle me-2 text-primary"></i>写入寄存器</h6>
                                     <div class="mb-3">
                                         <label class="form-label">寄存器地址</label>
-                                        <input type="number" class="form-control" id="writeRegister" value="0">
+                                        <select class="form-select" id="writeRegister">
+                                            <option value="">请选择...</option>
+                                        </select>
                                     </div>
                                     <div class="mb-3">
                                         <label class="form-label">写入值</label>
@@ -484,21 +488,57 @@
                                 </div>
                             </div>
                             <hr>
+                            <!-- 【新增】充电控制面板 -->
+                            <div class="row mt-4">
+                                <div class="col-12">
+                                    <h6 class="fw-bold mb-3"><i class="bi bi-sliders me-2 text-primary"></i>充电控制</h6>
+                                    
+                                    <!-- 功率限制滑块 -->
+                                    <div class="mb-4">
+                                        <label class="form-label fw-bold">功率限制: <span id="powerLimitValue" class="text-primary">120</span> kW</label>
+                                        <input type="range" class="form-range" id="powerLimitSlider" 
+                                               min="0" max="120" value="120" step="5">
+                                    </div>
+                                    
+                                    <!-- 目标SOC -->
+                                    <div class="mb-4">
+                                        <label class="form-label fw-bold">目标SOC: <span id="targetSocValue" class="text-primary">100</span>%</label>
+                                        <input type="range" class="form-range" id="targetSocSlider" 
+                                               min="10" max="100" value="100" step="5">
+                                    </div>
+                                    
+                                    <!-- 控制按钮 -->
+                                    <div class="d-flex gap-2 mb-3">
+                                        <button class="btn btn-success" onclick="controlDevice('start_charging')">
+                                            <i class="bi bi-play-fill me-1"></i>开始充电
+                                        </button>
+                                        <button class="btn btn-warning" onclick="controlDevice('stop_charging')">
+                                            <i class="bi bi-stop-fill me-1"></i>停止充电
+                                        </button>
+                                        <button class="btn btn-outline-secondary" onclick="controlDevice('clear_fault')">
+                                            <i class="bi bi-check-circle me-1"></i>清除故障
+                                        </button>
+                                        <button class="btn btn-danger" onclick="controlDevice('emergency_stop')">
+                                            <i class="bi bi-exclamation-triangle me-1"></i>急停
+                                        </button>
+                                    </div>
+                                    
+                                    <!-- 控制结果 -->
+                                    <div id="controlResult"></div>
+                                </div>
+                            </div>
+                            <hr>
+                            <!-- 寄存器快速访问（型号自适应） -->
                             <div class="row mt-4">
                                 <div class="col-12">
                                     <h6 class="fw-bold mb-3"><i class="bi bi-grid-3x3 me-2 text-info"></i>充电桩寄存器快速访问</h6>
                                     <div class="table-responsive">
-                                        <table class="table table-sm table-striped">
+                                        <table class="table table-sm table-striped" id="quickAccessTable">
                                             <thead>
                                                 <tr><th>地址</th><th>描述</th><th>单位</th><th>操作</th></tr>
                                             </thead>
-                                            <tbody>
-                                                <tr><td>0</td><td>电压</td><td>V (x10)</td><td><button class="btn btn-sm btn-outline-primary device-action-btn" onclick="quickRead(0)">读取</button></td></tr>
-                                                <tr><td>1</td><td>电流</td><td>A (x10)</td><td><button class="btn btn-sm btn-outline-primary device-action-btn" onclick="quickRead(1)">读取</button></td></tr>
-                                                <tr><td>2</td><td>功率</td><td>W</td><td><button class="btn btn-sm btn-outline-primary device-action-btn" onclick="quickRead(2)">读取</button></td></tr>
-                                                <tr><td>3</td><td>累计能量</td><td>kWh (x100)</td><td><button class="btn btn-sm btn-outline-primary device-action-btn" onclick="quickRead(3)">读取</button></td></tr>
-                                                <tr><td>4</td><td>温度</td><td>°C (x10)</td><td><button class="btn btn-sm btn-outline-primary device-action-btn" onclick="quickRead(4)">读取</button></td></tr>
-                                                <tr><td>5</td><td>状态</td><td>0=可用,1=充电中,2=故障</td><td><button class="btn btn-sm btn-outline-primary device-action-btn" onclick="quickRead(5)">读取</button></td></tr>
+                                            <tbody id="quickAccessBody">
+                                                <!-- 动态生成 -->
                                             </tbody>
                                         </table>
                                     </div>
@@ -694,6 +734,9 @@
             document.getElementById('dataPoints').textContent = total;
         }
         
+        // 【新增】全局存储设备列表
+        let connectedDevices = [];
+        
         async function loadConnectedDevices() {
             const data = await fetchJSON('/api/devices/connected');
             const container = document.getElementById('connectedDeviceList');
@@ -702,6 +745,9 @@
                 container.innerHTML = '<div class="alert alert-danger">加载失败</div>';
                 return;
             }
+            
+            // 【新增】存储设备列表
+            connectedDevices = data;
             
             document.getElementById('connectedDeviceCount').textContent = data.length;
             
@@ -740,13 +786,93 @@
             container.innerHTML = html;
         }
         
+        // 【新增】根据型号生成寄存器快速访问表格
+        function updateQuickAccessTable(deviceModel) {
+            const tbody = document.getElementById('quickAccessBody');
+            
+            // 寄存器定义（地址 -> 描述）
+            let registers = [];
+            
+            if (deviceModel && deviceModel.startsWith('xj_')) {
+                // 许继型号
+                registers = [
+                    {addr: '0x1000', dec: 4096, name: '枪个数', unit: '个', scale: 1},
+                    {addr: '0x1001', dec: 4097, name: '最大功率', unit: 'kW', scale: 1},
+                    {addr: '0x2000', dec: 8192, name: '枪1-状态', unit: '-', scale: 1},
+                    {addr: '0x2010', dec: 8208, name: '枪1-电压', unit: 'V', scale: 0.1},
+                    {addr: '0x2011', dec: 8209, name: '枪1-电流', unit: 'A', scale: 0.01},
+                    {addr: '0x200E', dec: 8206, name: '枪1-功率', unit: 'kW', scale: 0.001},
+                    {addr: '0x2012', dec: 8210, name: '枪1-SOC', unit: '%', scale: 1},
+                    {addr: '0x2013', dec: 8211, name: '枪1-温度', unit: '°C', scale: 1},
+                    {addr: '0x2100', dec: 8448, name: '枪2-状态', unit: '-', scale: 1},
+                ];
+            } else {
+                // 通用型号
+                registers = [
+                    {addr: '0', dec: 0, name: '电压', unit: 'V', scale: 0.1},
+                    {addr: '1', dec: 1, name: '电流', unit: 'A', scale: 0.1},
+                    {addr: '2', dec: 2, name: '功率', unit: 'W', scale: 1},
+                    {addr: '3', dec: 3, name: '累计能量', unit: 'kWh', scale: 0.01},
+                    {addr: '4', dec: 4, name: '温度', unit: '°C', scale: 0.1},
+                    {addr: '5', dec: 5, name: '状态', unit: '-', scale: 1},
+                ];
+            }
+            
+            // 保存到全局，供后续使用
+            window.currentRegisters = registers;
+            
+            // 生成快速访问表格（带数值列）
+            let html = '';
+            registers.forEach((reg, idx) => {
+                html += `<tr id="reg-row-${idx}">
+                    <td><code>${reg.addr}</code></td>
+                    <td>${reg.name}</td>
+                    <td>${reg.unit}</td>
+                    <td><button class="btn btn-sm btn-outline-primary device-action-btn" onclick="quickRead(${reg.dec}, ${idx})">读取</button></td>
+                    <td class="reg-value text-muted" id="reg-value-${idx}">-</td>
+                </tr>`;
+            });
+            tbody.innerHTML = html;
+            
+            // 同时更新读取/写入下拉框
+            updateRegisterSelects(registers);
+        }
+        
+        // 【新增】更新读取/写入寄存器下拉框
+        function updateRegisterSelects(registers) {
+            const readSelect = document.getElementById('readRegister');
+            const writeSelect = document.getElementById('writeRegister');
+            
+            let options = '<option value="">请选择...</option>';
+            registers.forEach(reg => {
+                options += `<option value="${reg.dec}" data-desc="${reg.name} (${reg.unit})">${reg.addr} - ${reg.name}</option>`;
+            });
+            
+            readSelect.innerHTML = options;
+            writeSelect.innerHTML = options;
+            
+            // 读取下拉框改变时更新描述
+            readSelect.addEventListener('change', function() {
+                const option = this.options[this.selectedIndex];
+                document.getElementById('readRegisterDesc').textContent = option.dataset.desc || '选择要读取的寄存器';
+            });
+        }
+        
         function selectDevice(deviceId) {
             currentDeviceId = deviceId;
             document.getElementById('currentDeviceName').textContent = deviceId;
             document.getElementById('deviceDetailCard').style.display = 'block';
             document.getElementById('readResult').innerHTML = '';
             document.getElementById('writeResult').innerHTML = '';
-            // 【新增】加载枪数据
+            document.getElementById('controlResult').innerHTML = '';
+            
+            // 【新增】获取设备型号并更新寄存器表格
+            const device = connectedDevices.find(d => d.device_id === deviceId);
+            if (device) {
+                updateQuickAccessTable(device.model);
+            }
+            
+            // 加载枪数据
             document.getElementById('gunDataPanel').innerHTML = '<div class="text-center py-4"><div class="spinner-border spinner-border-sm"></div><p class="mt-2">加载中...</p></div>';
             loadGunData();
         }
@@ -830,15 +956,73 @@
             panel.innerHTML = html;
         }
         
+        // 【新增】滑块值更新显示
+        document.getElementById('powerLimitSlider').addEventListener('input', function() {
+            document.getElementById('powerLimitValue').textContent = this.value;
+        });
+        
+        document.getElementById('targetSocSlider').addEventListener('input', function() {
+            document.getElementById('targetSocValue').textContent = this.value;
+        });
+        
+        // 【新增】设备控制
+        async function controlDevice(action) {
+            if (!currentDeviceId) {
+                alert('请先选择设备');
+                return;
+            }
+            
+            const gunId = parseInt(document.getElementById('gunSelector').value);
+            const resultDiv = document.getElementById('controlResult');
+            
+            // 构建参数
+            const params = {};
+            if (action === 'set_power' || action === 'start_charging') {
+                // 开始充电时自动设置功率限制
+                params.power_kw = parseInt(document.getElementById('powerLimitSlider').value);
+            }
+            if (action === 'set_soc' || action === 'start_charging') {
+                // 开始充电时自动设置目标SOC
+                params.target_soc = parseInt(document.getElementById('targetSocSlider').value);
+            }
+            
+            resultDiv.innerHTML = '<div class="text-center"><div class="spinner-border spinner-border-sm"></div> 执行中...</div>';
+            
+            const result = await postJSON(`/api/devices/${currentDeviceId}/control`, {
+                action: action,
+                gun_id: gunId,
+                params: params
+            });
+            
+            if (result && result.success) {
+                resultDiv.innerHTML = '<div class="alert alert-success alert-sm py-2"><i class="bi bi-check-circle-fill me-1"></i>操作成功</div>';
+                // 延迟刷新枪数据
+                setTimeout(loadGunData, 500);
+            } else {
+                resultDiv.innerHTML = '<div class="alert alert-danger alert-sm py-2"><i class="bi bi-x-circle-fill me-1"></i>' + (result ? result.message : '操作失败') + '</div>';
+            }
+            
+            // 3秒后清除提示
+            setTimeout(() => {
+                resultDiv.innerHTML = '';
+            }, 3000);
+        }
+        
         async function testModbusConnection() {
             const host = document.getElementById('modbusHost').value;
             const port = parseInt(document.getElementById('modbusPort').value);
             const unitId = parseInt(document.getElementById('modbusUnitId').value);
+            const deviceModel = document.getElementById('deviceModel').value;  // 【新增】型号
             
             const resultDiv = document.getElementById('testResult');
             resultDiv.innerHTML = '<div class="text-center"><div class="spinner-border spinner-border-sm"></div> 测试中...</div>';
             
-            const result = await postJSON('/api/devices/test-modbus', { host, port, unit_id: unitId });
+            const result = await postJSON('/api/devices/test-modbus', { 
+                host, 
+                port, 
+                unit_id: unitId,
+                model: deviceModel  // 【新增】型号
+            });
             
             if (result && result.success) {
                 resultDiv.innerHTML = '<div class="alert alert-success"><i class="bi bi-check-circle-fill me-2"></i>' + result.message + ' (测试值: ' + result.test_value + ')</div>';
@@ -877,18 +1061,31 @@
             }
         });
         
-        async function readRegister() {
+        async function readRegister(updateTableIdx = null) {
             if (!currentDeviceId) {
                 alert('请先选择设备');
                 return;
             }
             
             const register = document.getElementById('readRegister').value;
+            if (!register) {
+                alert('请选择寄存器地址');
+                return;
+            }
+            
             const result = await postJSON('/api/devices/' + currentDeviceId + '/read-register', { register });
             
             const resultDiv = document.getElementById('readResult');
             if (result && result.success) {
                 resultDiv.innerHTML = '<div class="alert alert-success"><i class="bi bi-check-circle-fill me-2"></i>寄存器 ' + register + ' = <strong>' + result.value + '</strong></div>';
+                
+                // 【新增】如果指定了表格索引，更新表格中的数值
+                if (updateTableIdx !== null && window.currentRegisters) {
+                    const reg = window.currentRegisters[updateTableIdx];
+                    const scaledValue = result.value * reg.scale;
+                    document.getElementById('reg-value-' + updateTableIdx).innerHTML = 
+                        '<span class="text-success fw-bold">' + scaledValue.toFixed(reg.scale < 1 ? 2 : 0) + ' ' + reg.unit + '</span>';
+                }
             } else {
                 resultDiv.innerHTML = '<div class="alert alert-danger"><i class="bi bi-x-circle-fill me-2"></i>读取失败: ' + (result ? result.message : '未知错误') + '</div>';
             }
@@ -901,6 +1098,11 @@
             }
             
             const register = document.getElementById('writeRegister').value;
+            if (!register) {
+                alert('请选择寄存器地址');
+                return;
+            }
+            
             const value = parseInt(document.getElementById('writeValue').value);
             
             const result = await postJSON('/api/devices/' + currentDeviceId + '/write-register', { register, value });
@@ -913,9 +1115,10 @@
             }
         }
         
-        function quickRead(register) {
+        // 【修改】支持更新表格
+        function quickRead(register, tableIdx = null) {
             document.getElementById('readRegister').value = register;
-            readRegister();
+            readRegister(tableIdx);
         }
         
         async function loadStrategies() {
