@@ -15,7 +15,12 @@ logs/
 # Virtual Environment
 venv/
 venv_py310/
+.venv/
 .env/
+/Include/
+/Lib/
+/Scripts/
+/pyvenv.cfg
 
 # IDE
 .idea/

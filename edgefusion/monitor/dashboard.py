@@ -31,9 +31,11 @@ class Dashboard:
         self.strategies: Dict[str, StrategyBase] = {}
         self.connected_devices: Dict[str, Any] = {}
         
-        # 配置模板目录
-        template_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'templates')
-        self.app = Flask(__name__, template_folder=template_dir)
+        # 显式配置模板和静态资源目录，避免前端依赖外网 CDN
+        app_root = os.path.dirname(os.path.dirname(__file__))
+        template_dir = os.path.join(app_root, 'templates')
+        static_dir = os.path.join(app_root, 'static')
+        self.app = Flask(__name__, template_folder=template_dir, static_folder=static_dir)
         
         self.running = False
         self.server_thread = None
