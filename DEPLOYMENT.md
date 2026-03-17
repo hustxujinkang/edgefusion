@@ -34,7 +34,7 @@ cd ~/src/edgefusion
 首次部署推荐直接执行：
 
 ```bash
-chmod +x deploy.sh run_local.sh backup.sh restore.sh
+chmod +x deploy.sh run_local.sh backup.sh restore.sh uninstall.sh
 sudo ./deploy.sh
 ```
 
@@ -241,6 +241,30 @@ sudo ./deploy.sh
 
 它会保留配置、数据库和日志，只更新程序文件、依赖和 service。
 
-## 11. Windows 开发联调
+## 11. 卸载
+
+如果你只想移除服务和程序目录，但保留配置、数据库和日志：
+
+```bash
+sudo ./uninstall.sh
+```
+
+它会执行以下动作：
+
+- 停止并禁用 `edgefusion` 服务
+- 删除 `/etc/systemd/system/edgefusion.service`
+- `daemon-reload`
+- 删除程序目录 `/opt/edgefusion`
+- 保留 `/etc/edgefusion`、`/var/lib/edgefusion`、`/var/log/edgefusion`
+
+如果你要完全清除生产状态，可执行：
+
+```bash
+sudo ./uninstall.sh --purge
+```
+
+`--purge` 会额外删除配置目录、数据库目录和日志目录。当前 `uninstall.sh` 不会自动删除运行用户；如果该用户只供 EdgeFusion 使用，可按需手工执行 `sudo userdel edgefusion`。
+
+## 12. Windows 开发联调
 
 Windows 环境请使用仓库根目录下的 `start.bat`。它会在首次运行时自动创建 `.venv` 并安装依赖，后续启动只负责运行程序。

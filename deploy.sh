@@ -182,7 +182,8 @@ chmod +x \
   "$EDGEFUSION_APP_DIR/deploy.sh" \
   "$EDGEFUSION_APP_DIR/run_local.sh" \
   "$EDGEFUSION_APP_DIR/backup.sh" \
-  "$EDGEFUSION_APP_DIR/restore.sh"
+  "$EDGEFUSION_APP_DIR/restore.sh" \
+  "$EDGEFUSION_APP_DIR/uninstall.sh"
 
 resolve_python_bin
 

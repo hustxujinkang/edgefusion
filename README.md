@@ -22,7 +22,7 @@
 ### Linux 正式部署
 
 ```bash
-chmod +x deploy.sh run_local.sh backup.sh restore.sh
+chmod +x deploy.sh run_local.sh backup.sh restore.sh uninstall.sh
 sudo ./deploy.sh
 ```
 
@@ -59,6 +59,18 @@ sudo \
 后续升级时，在新的源码目录执行同一条 `sudo ./deploy.sh` 即可，已有配置、数据库和日志会保留。
 
 如需完全跳过交互，可同时传入 `EDGEFUSION_*` 和 `EDGEFUSION_NONINTERACTIVE=1`。本地联调请使用 `run_local.sh` 或 Windows 下的 `start.bat`。详见 [DEPLOYMENT.md](DEPLOYMENT.md)。
+
+如果需要卸载 Linux 生产部署：
+
+```bash
+sudo ./uninstall.sh
+```
+
+默认只卸载服务和程序目录，保留配置、数据库和日志。若要连生产状态一起清理：
+
+```bash
+sudo ./uninstall.sh --purge
+```
 
 ### Windows 开发联调
 
@@ -166,6 +178,7 @@ edgefusion/
 ├── run_local.sh
 ├── backup.sh
 ├── restore.sh
+├── uninstall.sh
 ├── edgefusion.service.template
 └── DEPLOYMENT.md
 ```

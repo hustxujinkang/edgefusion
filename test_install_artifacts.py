@@ -14,6 +14,26 @@ def test_install_and_run_scripts_are_removed():
     assert not (ROOT / "run.sh").exists()
 
 
+def test_uninstall_script_exists_and_defaults_to_keep_data():
+    uninstall_script = ROOT / "uninstall.sh"
+
+    assert uninstall_script.exists()
+
+    content = uninstall_script.read_text(encoding="utf-8")
+
+    assert '. "$PROJECT_DIR/runtime-env.sh"' in content
+    assert 'PURGE=0' in content
+    assert '[ "${1:-}" = "--purge" ]' in content
+    assert 'systemctl stop "$EDGEFUSION_SERVICE_NAME"' in content
+    assert 'systemctl disable "$EDGEFUSION_SERVICE_NAME"' in content
+    assert 'rm -f "$SERVICE_FILE"' in content
+    assert 'rm -rf "$EDGEFUSION_APP_DIR"' in content
+    assert 'if [ "$PURGE" -eq 1 ]; then' in content
+    assert 'rm -rf "$EDGEFUSION_CONFIG_DIR"' in content
+    assert 'rm -rf "$EDGEFUSION_DATA_DIR"' in content
+    assert 'rm -rf "$EDGEFUSION_LOG_DIR"' in content
+
+
 def test_run_local_script_bootstraps_local_environment_and_uses_project_local_paths():
     run_local = ROOT / "run_local.sh"
 
@@ -38,8 +58,10 @@ def test_deploy_script_handles_production_installation_without_install_or_run_sc
     assert '"$PYTHON_BIN" -m venv .venv' in content
     assert '.venv/bin/python -m pip install -r "$REQ_FILE"' in content
     assert 'REQ_FILE="${EDGEFUSION_REQUIREMENTS_FILE:-requirements-prod.txt}"' in content
-    assert "install.sh" not in content
-    assert "run.sh" not in content
+    assert "./install.sh" not in content
+    assert "$EDGEFUSION_APP_DIR/install.sh" not in content
+    assert "./run.sh" not in content
+    assert "$EDGEFUSION_APP_DIR/run.sh" not in content
     assert "edgefusion.service.template" in content
 
 
