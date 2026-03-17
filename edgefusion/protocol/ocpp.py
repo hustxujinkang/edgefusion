@@ -1,5 +1,6 @@
 # OCPP协议实现（充电桩）
 from typing import Dict, Any, Optional
+from ..logger import get_logger
 from .base import ProtocolBase
 
 
@@ -16,6 +17,7 @@ class OCPPProtocol(ProtocolBase):
         self.host = config.get('host', 'localhost')
         self.port = config.get('port', 8080)
         self.endpoint = config.get('endpoint', '/ocpp')
+        self.logger = get_logger('OCPPProtocol')
         # 实际项目中应使用pyocpp库
         # 这里简化实现
     
@@ -31,7 +33,7 @@ class OCPPProtocol(ProtocolBase):
             self.connected = True
             return True
         except Exception as e:
-            print(f"OCPP连接失败: {e}")
+            self.logger.error("OCPP连接失败: %s", e)
             self.connected = False
             return False
     
@@ -46,7 +48,7 @@ class OCPPProtocol(ProtocolBase):
             self.connected = False
             return True
         except Exception as e:
-            print(f"OCPP断开失败: {e}")
+            self.logger.error("OCPP断开失败: %s", e)
             return False
     
     def read_data(self, device_id: str, register: str) -> Optional[Any]:
@@ -75,7 +77,7 @@ class OCPPProtocol(ProtocolBase):
             }
             return mock_data.get(register)
         except Exception as e:
-            print(f"OCPP读取失败: {e}")
+            self.logger.error("OCPP读取失败: %s", e)
             return None
     
     def write_data(self, device_id: str, register: str, value: Any) -> bool:
@@ -95,10 +97,10 @@ class OCPPProtocol(ProtocolBase):
         try:
             # 模拟写入OCPP设备数据
             # 实际应通过OCPP协议发送命令
-            print(f"OCPP写入: 设备={device_id}, 数据点={register}, 值={value}")
+            self.logger.info("OCPP写入: 设备=%s, 数据点=%s, 值=%s", device_id, register, value)
             return True
         except Exception as e:
-            print(f"OCPP写入失败: {e}")
+            self.logger.error("OCPP写入失败: %s", e)
             return False
     
     def discover_devices(self) -> Dict[str, Dict[str, Any]]:

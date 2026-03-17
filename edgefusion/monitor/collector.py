@@ -5,6 +5,7 @@ import threading
 import time
 from ..device_manager import DeviceManager
 from ..config import Config
+from ..logger import get_logger
 
 
 class DataCollector:
@@ -26,6 +27,7 @@ class DataCollector:
         self.collect_interval = config.get('collect_interval', 10)  # 采集间隔（秒）
         self.data_buffer: List[Dict[str, Any]] = []
         self.buffer_lock = threading.Lock()
+        self.logger = get_logger('DataCollector')
     
     def start(self) -> bool:
         """启动数据采集
@@ -37,10 +39,10 @@ class DataCollector:
             self.collecting = True
             self.collect_thread = threading.Thread(target=self._collect_loop, daemon=True)
             self.collect_thread.start()
-            print("启动数据采集器")
+            self.logger.info("启动数据采集器")
             return True
         except Exception as e:
-            print(f"启动数据采集器失败: {e}")
+            self.logger.error("启动数据采集器失败: %s", e)
             self.collecting = False
             return False
     
@@ -54,10 +56,10 @@ class DataCollector:
             self.collecting = False
             if self.collect_thread:
                 self.collect_thread.join(timeout=5)
-            print("停止数据采集器")
+            self.logger.info("停止数据采集器")
             return True
         except Exception as e:
-            print(f"停止数据采集器失败: {e}")
+            self.logger.error("停止数据采集器失败: %s", e)
             return False
     
     def _collect_loop(self):
@@ -67,7 +69,7 @@ class DataCollector:
                 self.collect_data()
                 time.sleep(self.collect_interval)
             except Exception as e:
-                print(f"数据采集失败: {e}")
+                self.logger.error("数据采集失败: %s", e)
                 time.sleep(self.collect_interval)
     
     def collect_data(self) -> List[Dict[str, Any]]:
@@ -143,7 +145,7 @@ class DataCollector:
                 }
             }
         except Exception as e:
-            print(f"采集光伏数据失败: {e}")
+            self.logger.warning("采集光伏数据失败: %s", e)
             return {
                 'device_id': device_id,
                 'device_type': 'pv',
@@ -188,7 +190,7 @@ class DataCollector:
                 }
             }
         except Exception as e:
-            print(f"采集储能数据失败: {e}")
+            self.logger.warning("采集储能数据失败: %s", e)
             return {
                 'device_id': device_id,
                 'device_type': 'energy_storage',
@@ -233,7 +235,7 @@ class DataCollector:
                 }
             }
         except Exception as e:
-            print(f"采集充电桩数据失败: {e}")
+            self.logger.warning("采集充电桩数据失败: %s", e)
             return {
                 'device_id': device_id,
                 'device_type': 'charging_station',
@@ -270,7 +272,7 @@ class DataCollector:
                 }
             }
         except Exception as e:
-            print(f"采集通用设备数据失败: {e}")
+            self.logger.warning("采集通用设备数据失败: %s", e)
             return {
                 'device_id': device_id,
                 'device_type': 'generic',

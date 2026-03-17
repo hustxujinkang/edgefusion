@@ -3,6 +3,7 @@ from typing import Dict, Any, Optional
 import paho.mqtt.client as mqtt
 import json
 import time
+from ..logger import get_logger
 from .base import ProtocolBase
 
 
@@ -25,6 +26,7 @@ class MQTTProtocol(ProtocolBase):
         self.client = None
         self.subscribed_topics = set()
         self.message_callback = None
+        self.logger = get_logger('MQTTProtocol')
     
     def connect(self) -> bool:
         """连接MQTT broker
@@ -52,7 +54,7 @@ class MQTTProtocol(ProtocolBase):
             self.connected = self.client.is_connected()
             return self.connected
         except Exception as e:
-            print(f"MQTT连接失败: {e}")
+            self.logger.error("MQTT连接失败: %s", e)
             self.connected = False
             return False
     
@@ -69,7 +71,7 @@ class MQTTProtocol(ProtocolBase):
             self.connected = False
             return True
         except Exception as e:
-            print(f"MQTT断开失败: {e}")
+            self.logger.error("MQTT断开失败: %s", e)
             return False
     
     def read_data(self, device_id: str, register: str) -> Optional[Any]:
@@ -107,7 +109,7 @@ class MQTTProtocol(ProtocolBase):
             result = self.client.publish(topic, payload, qos=1)
             return result.rc == mqtt.MQTT_ERR_SUCCESS
         except Exception as e:
-            print(f"MQTT写入失败: {e}")
+            self.logger.error("MQTT写入失败: %s", e)
             return False
     
     def discover_devices(self) -> Dict[str, Dict[str, Any]]:
@@ -152,7 +154,7 @@ class MQTTProtocol(ProtocolBase):
                 return True
             return False
         except Exception as e:
-            print(f"MQTT订阅失败: {e}")
+            self.logger.error("MQTT订阅失败: %s", e)
             return False
     
     def publish(self, topic: str, payload: str, qos: int = 0) -> bool:
@@ -173,15 +175,15 @@ class MQTTProtocol(ProtocolBase):
             result = self.client.publish(topic, payload, qos)
             return result.rc == mqtt.MQTT_ERR_SUCCESS
         except Exception as e:
-            print(f"MQTT发布失败: {e}")
+            self.logger.error("MQTT发布失败: %s", e)
             return False
     
     def _on_connect(self, client, userdata, flags, rc):
         """连接回调函数"""
         if rc == 0:
-            print(f"MQTT连接成功: {self.broker}:{self.port}")
+            self.logger.info("MQTT连接成功: %s:%s", self.broker, self.port)
         else:
-            print(f"MQTT连接失败，错误码: {rc}")
+            self.logger.warning("MQTT连接失败，错误码: %s", rc)
     
     def _on_message(self, client, userdata, msg):
         """消息回调函数"""
@@ -190,7 +192,7 @@ class MQTTProtocol(ProtocolBase):
                 payload = json.loads(msg.payload.decode())
                 self.message_callback(msg.topic, payload)
             except Exception as e:
-                print(f"MQTT消息处理失败: {e}")
+                self.logger.error("MQTT消息处理失败: %s", e)
     
     def set_message_callback(self, callback):
         """设置消息回调函数

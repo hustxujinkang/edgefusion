@@ -69,5 +69,22 @@ def test_service_template_starts_python_directly():
     template = ROOT / "edgefusion.service.template"
     content = template.read_text(encoding="utf-8")
 
+    assert "Environment=PYTHONIOENCODING" not in content
+    assert "Environment=PYTHONUTF8" not in content
     assert "ExecStart=__EDGEFUSION_PROJECT_DIR__/.venv/bin/python -m edgefusion.main" in content
     assert "run.sh" not in content
+
+
+def test_runtime_package_uses_logger_instead_of_print_statements():
+    package_files = list((ROOT / "edgefusion").rglob("*.py"))
+    offenders = []
+
+    for file_path in package_files:
+        if "__pycache__" in file_path.parts:
+            continue
+
+        content = file_path.read_text(encoding="utf-8")
+        if "print(" in content:
+            offenders.append(file_path.relative_to(ROOT).as_posix())
+
+    assert offenders == []

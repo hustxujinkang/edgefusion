@@ -3,6 +3,7 @@ from typing import Dict, Any, List
 from datetime import datetime
 from sqlalchemy import create_engine, Column, String, Float, Text, DateTime, JSON
 from sqlalchemy.orm import declarative_base, sessionmaker
+from ..logger import get_logger
 from ..runtime_paths import get_database_url
 
 Base = declarative_base()
@@ -32,6 +33,7 @@ class Database:
         self.db_url = get_database_url(db_url)
         self.engine = create_engine(self.db_url, echo=False)
         self.Session = sessionmaker(bind=self.engine)
+        self.logger = get_logger('Database')
         self._create_tables()
     
     def _create_tables(self):
@@ -68,7 +70,7 @@ class Database:
             session.close()
             return True
         except Exception as e:
-            print(f"插入数据失败: {e}")
+            self.logger.error("插入数据失败: %s", e)
             return False
     
     def get_data_by_device(self, device_id: str, limit: int = 100) -> List[Dict[str, Any]]:
@@ -104,7 +106,7 @@ class Database:
             session.close()
             return result
         except Exception as e:
-            print(f"获取设备数据失败: {e}")
+            self.logger.error("获取设备数据失败: %s", e)
             return []
     
     def get_data_by_time_range(self, start_time: datetime, end_time: datetime, device_id: str = None) -> List[Dict[str, Any]]:
@@ -147,7 +149,7 @@ class Database:
             session.close()
             return result
         except Exception as e:
-            print(f"获取时间范围数据失败: {e}")
+            self.logger.error("获取时间范围数据失败: %s", e)
             return []
     
     def get_latest_data(self, device_id: str = None) -> List[Dict[str, Any]]:
@@ -204,7 +206,7 @@ class Database:
             session.close()
             return result
         except Exception as e:
-            print(f"获取最新数据失败: {e}")
+            self.logger.error("获取最新数据失败: %s", e)
             return []
     
     def get_device_stats(self) -> Dict[str, Any]:
@@ -230,7 +232,7 @@ class Database:
             session.close()
             return result
         except Exception as e:
-            print(f"获取设备统计信息失败: {e}")
+            self.logger.error("获取设备统计信息失败: %s", e)
             return {}
     
     def delete_old_data(self, days: int = 7):
@@ -253,9 +255,9 @@ class Database:
             session.commit()
             session.close()
             
-            print(f"删除了{deleted_count}条旧数据")
+            self.logger.info("删除了%s条旧数据", deleted_count)
         except Exception as e:
-            print(f"删除旧数据失败: {e}")
+            self.logger.error("删除旧数据失败: %s", e)
 
 
 # 导入timedelta

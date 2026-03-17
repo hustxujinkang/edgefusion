@@ -2,6 +2,7 @@
 from typing import Dict, Any
 from datetime import datetime
 from .base import StrategyBase
+from ..logger import get_logger
 
 
 class SelfConsumptionStrategy(StrategyBase):
@@ -15,6 +16,7 @@ class SelfConsumptionStrategy(StrategyBase):
             device_manager: 设备管理器实例
         """
         super().__init__(config, device_manager)
+        self.logger = get_logger('SelfConsumptionStrategy')
         self.soc_target = config.get('soc_target', 80)  # 储能SOC目标（%）
         self.min_soc = config.get('min_soc', 20)  # 储能最小SOC（%）
         self.pv_power_threshold = config.get('pv_power_threshold', 1000)  # 光伏功率阈值（W）
@@ -28,10 +30,10 @@ class SelfConsumptionStrategy(StrategyBase):
         """
         try:
             self.enabled = True
-            print("启动自发自用策略")
+            self.logger.info("启动自发自用策略")
             return True
         except Exception as e:
-            print(f"启动自发自用策略失败: {e}")
+            self.logger.error("启动自发自用策略失败: %s", e)
             return False
     
     def stop(self) -> bool:
@@ -42,10 +44,10 @@ class SelfConsumptionStrategy(StrategyBase):
         """
         try:
             self.enabled = False
-            print("停止自发自用策略")
+            self.logger.info("停止自发自用策略")
             return True
         except Exception as e:
-            print(f"停止自发自用策略失败: {e}")
+            self.logger.error("停止自发自用策略失败: %s", e)
             return False
     
     def execute(self) -> Dict[str, Any]:
@@ -100,10 +102,10 @@ class SelfConsumptionStrategy(StrategyBase):
                         # 储能电量不足，从电网获取
                         result['actions'].extend(self._import_from_grid(power_shortage))
             
-            print(f"自发自用策略执行结果: {result}")
+            self.logger.debug("自发自用策略执行结果: %s", result)
             return result
         except Exception as e:
-            print(f"执行自发自用策略失败: {e}")
+            self.logger.error("执行自发自用策略失败: %s", e)
             return {'status': 'error', 'message': str(e)}
     
     def get_status(self) -> Dict[str, Any]:

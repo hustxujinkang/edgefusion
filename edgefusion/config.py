@@ -2,7 +2,11 @@
 import yaml
 import os
 from typing import Dict, Any
+from .logger import get_logger
 from .runtime_paths import get_config_file
+
+
+logger = get_logger("Config")
 
 
 class Config:
@@ -30,7 +34,7 @@ class Config:
                 # 保存默认配置到文件
                 self.save_config()
         except Exception as e:
-            print(f"加载配置文件失败: {e}")
+            logger.error("加载配置文件失败: %s", e)
             self._load_default_config()
     
     def _load_default_config(self):
@@ -89,7 +93,7 @@ class Config:
             with open(self.config_file, 'w', encoding='utf-8') as f:
                 yaml.dump(self.config, f, default_flow_style=False, allow_unicode=True)
         except Exception as e:
-            print(f"保存配置文件失败: {e}")
+            logger.error("保存配置文件失败: %s", e)
     
     def get(self, key: str, default: Any = None) -> Any:
         """获取配置值

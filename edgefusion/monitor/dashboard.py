@@ -6,6 +6,7 @@ import time
 import os
 from ..device_manager import DeviceManager
 from ..strategy import StrategyBase
+from ..logger import get_logger
 from .collector import DataCollector
 from .database import Database
 from ..protocol import ModbusProtocol
@@ -30,6 +31,7 @@ class Dashboard:
         self.database = database
         self.strategies: Dict[str, StrategyBase] = {}
         self.connected_devices: Dict[str, Any] = {}
+        self.logger = get_logger('Dashboard')
         
         # 显式配置模板和静态资源目录，避免前端依赖外网 CDN
         app_root = os.path.dirname(os.path.dirname(__file__))
@@ -404,10 +406,10 @@ class Dashboard:
             self.running = True
             self.server_thread = threading.Thread(target=self._run_server, daemon=True)
             self.server_thread.start()
-            print(f"启动监控面板（增强版），访问地址: http://{self.host}:{self.port}")
+            self.logger.info("启动监控面板（增强版），访问地址: http://%s:%s", self.host, self.port)
             return True
         except Exception as e:
-            print(f"启动监控面板失败: {e}")
+            self.logger.error("启动监控面板失败: %s", e)
             self.running = False
             return False
     
@@ -419,10 +421,10 @@ class Dashboard:
         """
         try:
             self.running = False
-            print("停止监控面板")
+            self.logger.info("停止监控面板")
             return True
         except Exception as e:
-            print(f"停止监控面板失败: {e}")
+            self.logger.error("停止监控面板失败: %s", e)
             return False
     
     def _run_server(self):
@@ -430,7 +432,7 @@ class Dashboard:
         try:
             self.app.run(host=self.host, port=self.port, debug=False, use_reloader=False)
         except Exception as e:
-            print(f"服务器运行失败: {e}")
+            self.logger.error("服务器运行失败: %s", e)
             self.running = False
     
     def get_system_status(self) -> Dict[str, Any]:

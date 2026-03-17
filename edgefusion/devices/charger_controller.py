@@ -2,6 +2,7 @@
 # 封装不同型号的控制逻辑
 
 from typing import Dict, Any, Optional
+from ..logger import get_logger
 from ..protocol import ModbusProtocol
 from ..point_tables import POINT_TABLES
 
@@ -20,13 +21,14 @@ class ChargerController:
         self.model = device_info.get('model', 'generic_charger')
         self.unit_id = device_info.get('unit_id', 1)
         self.pt = POINT_TABLES.get(self.model, {})
+        self.logger = get_logger('ChargerController')
     
     def _write_register(self, addr: int, value: int) -> bool:
         """写单个寄存器"""
         try:
             return self.protocol.write_data(str(self.unit_id), str(addr), value)
         except Exception as e:
-            print(f"写寄存器失败 addr={addr}: {e}")
+            self.logger.error("写寄存器失败 addr=%s: %s", addr, e)
             return False
     
     def _write_control(self, gun_id: int, ctrl_type: int, param: int) -> bool:
@@ -59,7 +61,7 @@ class ChargerController:
                 self.protocol.write_data(str(self.unit_id), str(0x4003), (param >> 16) & 0xFFFF)
                 return True
         except Exception as e:
-            print(f"写控制寄存器失败: {e}")
+            self.logger.error("写控制寄存器失败: %s", e)
             return False
     
     def start_charging(self, gun_id: int = 1, power_kw: float = 120) -> bool:
@@ -104,7 +106,7 @@ class ChargerController:
             param = int(power_kw * 1000)
             return self._write_control(gun_id, 0x02, param)
         else:
-            print(f"通用型号不支持功率控制")
+            self.logger.warning("通用型号不支持功率控制")
             return False
     
     def clear_fault(self, gun_id: int = 1) -> bool:

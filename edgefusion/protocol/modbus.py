@@ -2,6 +2,7 @@
 from typing import Dict, Any, Optional
 from pymodbus.client import ModbusTcpClient
 from pymodbus.exceptions import ModbusException
+from ..logger import get_logger
 from .base import ProtocolBase
 
 
@@ -19,6 +20,7 @@ class ModbusProtocol(ProtocolBase):
         self.port = config.get('port', 502)
         self.timeout = config.get('timeout', 5)
         self.client = None
+        self.logger = get_logger('ModbusProtocol')
     
     def connect(self) -> bool:
         """连接Modbus设备
@@ -31,7 +33,7 @@ class ModbusProtocol(ProtocolBase):
             self.connected = self.client.connect()
             return self.connected
         except Exception as e:
-            print(f"Modbus连接失败: {e}")
+            self.logger.error("Modbus连接失败: %s", e)
             self.connected = False
             return False
     
@@ -47,7 +49,7 @@ class ModbusProtocol(ProtocolBase):
             self.connected = False
             return True
         except Exception as e:
-            print(f"Modbus断开失败: {e}")
+            self.logger.error("Modbus断开失败: %s", e)
             return False
     
     def read_data(self, device_id: str, register: str) -> Optional[Any]:
@@ -76,7 +78,7 @@ class ModbusProtocol(ProtocolBase):
             
             return response.registers[0]
         except Exception as e:
-            print(f"Modbus读取失败: {e}")
+            self.logger.error("Modbus读取失败: %s", e)
             return None
     
     def _read_registers(self, addr: int, count: int, slave_id: int = 1) -> Optional[list]:
@@ -96,11 +98,11 @@ class ModbusProtocol(ProtocolBase):
         try:
             response = self.client.read_holding_registers(addr, count, slave=slave_id)
             if response.isError():
-                print(f"读取寄存器失败: addr={addr}, count={count}")
+                self.logger.warning("读取寄存器失败: addr=%s, count=%s", addr, count)
                 return None
             return response.registers
         except Exception as e:
-            print(f"读取寄存器异常: {e}")
+            self.logger.error("读取寄存器异常: %s", e)
             return None
     
     def _write_registers(self, addr: int, values: list, slave_id: int = 1) -> bool:
@@ -123,11 +125,11 @@ class ModbusProtocol(ProtocolBase):
             
             response = self.client.write_registers(addr, values, slave=slave_id)
             if response.isError():
-                print(f"写寄存器失败: addr={addr}, values={values}")
+                self.logger.warning("写寄存器失败: addr=%s, values=%s", addr, values)
                 return False
             return True
         except Exception as e:
-            print(f"写寄存器异常: {e}")
+            self.logger.error("写寄存器异常: %s", e)
             return False
     
     def write_data(self, device_id: str, register: str, value: Any) -> bool:
@@ -156,7 +158,7 @@ class ModbusProtocol(ProtocolBase):
             
             return True
         except Exception as e:
-            print(f"Modbus写入失败: {e}")
+            self.logger.error("Modbus写入失败: %s", e)
             return False
     
     def discover_devices(self) -> Dict[str, Dict[str, Any]]:

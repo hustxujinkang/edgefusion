@@ -2,6 +2,7 @@
 from typing import Dict, Any
 from datetime import datetime
 from .base import StrategyBase
+from ..logger import get_logger
 
 
 class DemandResponseStrategy(StrategyBase):
@@ -15,6 +16,7 @@ class DemandResponseStrategy(StrategyBase):
             device_manager: 设备管理器实例
         """
         super().__init__(config, device_manager)
+        self.logger = get_logger('DemandResponseStrategy')
         self.response_levels = config.get('response_levels', {
             'level1': {'power_reduction': 10, 'duration': 30},  # 10%功率 reduction, 30分钟
             'level2': {'power_reduction': 20, 'duration': 60},  # 20%功率 reduction, 60分钟
@@ -31,10 +33,10 @@ class DemandResponseStrategy(StrategyBase):
         """
         try:
             self.enabled = True
-            print("启动需求响应策略")
+            self.logger.info("启动需求响应策略")
             return True
         except Exception as e:
-            print(f"启动需求响应策略失败: {e}")
+            self.logger.error("启动需求响应策略失败: %s", e)
             return False
     
     def stop(self) -> bool:
@@ -47,10 +49,10 @@ class DemandResponseStrategy(StrategyBase):
             self.enabled = False
             self.current_event = None
             self.event_start_time = None
-            print("停止需求响应策略")
+            self.logger.info("停止需求响应策略")
             return True
         except Exception as e:
-            print(f"停止需求响应策略失败: {e}")
+            self.logger.error("停止需求响应策略失败: %s", e)
             return False
     
     def execute(self) -> Dict[str, Any]:
@@ -92,10 +94,10 @@ class DemandResponseStrategy(StrategyBase):
                 # else:
                 result['message'] = '无需求响应事件'
             
-            print(f"需求响应策略执行结果: {result}")
+            self.logger.debug("需求响应策略执行结果: %s", result)
             return result
         except Exception as e:
-            print(f"执行需求响应策略失败: {e}")
+            self.logger.error("执行需求响应策略失败: %s", e)
             return {'status': 'error', 'message': str(e)}
     
     def get_status(self) -> Dict[str, Any]:
@@ -133,7 +135,7 @@ class DemandResponseStrategy(StrategyBase):
         
         self.current_event = event_level
         self.event_start_time = datetime.now()
-        print(f"手动触发需求响应事件: {event_level}")
+        self.logger.info("手动触发需求响应事件: %s", event_level)
         return True
     
     def _is_event_ended(self) -> bool:
