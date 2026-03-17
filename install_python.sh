@@ -31,7 +31,7 @@ OFFLINE_TAR=""
 CHECK_ONLY=0
 UNINSTALL=0
 STRIP=1                         # 默认用 stripped 版本，体积更小
-RELEASE_TAG="20260310"          # python-build-standalone release tag
+RELEASE_TAG="${PYTHON_INSTALL_TAG:-latest}"  # 默认自动获取最新 tag
 SYMLINK=1                       # 是否创建 /usr/local/bin 软链接
 
 # ---------------------------------------------------------------------------
@@ -134,6 +134,47 @@ if [ "$GLIBC_VER" != "unknown" ]; then
 fi
 
 # ---------------------------------------------------------------------------
+#  解析 Release Tag（支持 "latest" 自动获取）
+# ---------------------------------------------------------------------------
+resolve_release_tag() {
+  if [ "$RELEASE_TAG" != "latest" ]; then
+    log INFO "使用指定 tag: $RELEASE_TAG"
+    return
+  fi
+
+  log INFO "查询最新 release tag..."
+
+  # 方法 1: GitHub API (最准确)
+  local tag
+  tag=$(curl -sfL --connect-timeout 10 --max-time 15 \
+    "https://api.github.com/repos/astral-sh/python-build-standalone/releases/latest" \
+    2>/dev/null | grep -oP '"tag_name":\s*"\K[^"]+') || true
+
+  if [ -n "$tag" ]; then
+    RELEASE_TAG="$tag"
+    log INFO "最新 tag (via API): $RELEASE_TAG"
+    return
+  fi
+
+  # 方法 2: 从 latest-release.json 获取
+  tag=$(curl -sfL --connect-timeout 10 --max-time 15 \
+    "https://raw.githubusercontent.com/astral-sh/python-build-standalone/latest-release/latest-release.json" \
+    2>/dev/null | grep -oP '"tag":\s*"\K[^"]+') || true
+
+  if [ -n "$tag" ]; then
+    RELEASE_TAG="$tag"
+    log INFO "最新 tag (via JSON): $RELEASE_TAG"
+    return
+  fi
+
+  # 方法 3: 都查不到，用一个较新的已知 tag 兜底
+  RELEASE_TAG="20260310"
+  log WARN "无法查询最新 tag，使用兜底值: $RELEASE_TAG"
+}
+
+resolve_release_tag
+
+# ---------------------------------------------------------------------------
 #  检查已有安装
 # ---------------------------------------------------------------------------
 check_existing() {
@@ -203,32 +244,102 @@ if check_existing; then
 fi
 
 # ---------------------------------------------------------------------------
-#  构造下载文件名
+#  构造文件名后缀
 # ---------------------------------------------------------------------------
-build_filename() {
-  # 找到 VERSION 对应的完整版本号，这里用通配下载
-  # 文件名格式: cpython-3.11.x+TAG-ARCH-unknown-linux-gnu-install_only_stripped.tar.gz
+build_suffix() {
   local suffix="install_only"
   [ "$STRIP" -eq 1 ] && suffix="install_only_stripped"
-
-  echo "cpython-${VERSION}.*+${RELEASE_TAG}-${ARCH}-unknown-linux-gnu-${suffix}.tar.gz"
+  echo "$suffix"
 }
 
-FILENAME_PATTERN=$(build_filename)
-log INFO "目标文件匹配: $FILENAME_PATTERN"
+FLAVOR=$(build_suffix)
 
 # ---------------------------------------------------------------------------
-#  镜像选择与 URL 构造
+#  通过 GitHub API 查询精确文件名
+# ---------------------------------------------------------------------------
+discover_filename_via_api() {
+  # GitHub Releases API 返回该 tag 下所有 assets
+  local api_url="https://api.github.com/repos/astral-sh/python-build-standalone/releases/tags/${RELEASE_TAG}"
+  log INFO "通过 GitHub API 查询精确版本号..."
+  log INFO "  API: $api_url"
+
+  local api_response
+  api_response=$(curl -sfL --connect-timeout 10 --max-time 30 "$api_url" 2>/dev/null) || return 1
+
+  # 从 asset 列表中 grep 出匹配的文件名
+  # 匹配模式: cpython-3.11.XX+TAG-ARCH-unknown-linux-gnu-FLAVOR.tar.gz
+  local pattern="cpython-${VERSION}\.[0-9]+\+${RELEASE_TAG}-${ARCH}-unknown-linux-gnu-${FLAVOR}\.tar\.gz"
+
+  local filename
+  filename=$(echo "$api_response" \
+    | grep -oP "\"name\":\s*\"${pattern}\"" \
+    | head -1 \
+    | grep -oP 'cpython-[^"]+') || return 1
+
+  if [ -n "$filename" ]; then
+    log INFO "API 查询成功: $filename"
+    echo "$filename"
+    return 0
+  fi
+
+  return 1
+}
+
+# ---------------------------------------------------------------------------
+#  通过 HTML 页面解析文件名 (API 不可用时的 fallback)
+# ---------------------------------------------------------------------------
+discover_filename_via_html() {
+  local release_url="https://github.com/astral-sh/python-build-standalone/releases/expanded_assets/${RELEASE_TAG}"
+  log INFO "通过 Release 页面查询文件名..."
+
+  local html
+  html=$(curl -sfL --connect-timeout 10 --max-time 30 "$release_url" 2>/dev/null) || return 1
+
+  local pattern="cpython-${VERSION}\.[0-9]+\+${RELEASE_TAG}-${ARCH}-unknown-linux-gnu-${FLAVOR}\.tar\.gz"
+
+  local filename
+  filename=$(echo "$html" | grep -oP "$pattern" | head -1) || return 1
+
+  if [ -n "$filename" ]; then
+    log INFO "HTML 解析成功: $filename"
+    echo "$filename"
+    return 0
+  fi
+
+  return 1
+}
+
+# ---------------------------------------------------------------------------
+#  暴力扫描版本号 (所有在线方式都失败时的最终兜底)
+# ---------------------------------------------------------------------------
+discover_filename_via_bruteforce() {
+  log INFO "在线查询失败，尝试遍历常见版本号..."
+
+  # 从高到低尝试，覆盖范围尽量广
+  local -a candidates
+  case "$VERSION" in
+    3.10) candidates=($(seq 25 -1 10)) ;;
+    3.11) candidates=($(seq 20 -1 5))  ;;
+    3.12) candidates=($(seq 15 -1 5))  ;;
+    *)    die "不支持的版本: $VERSION（支持 3.10/3.11/3.12）" ;;
+  esac
+
+  for patch in "${candidates[@]}"; do
+    echo "${VERSION}.${patch}"
+  done
+}
+
+# ---------------------------------------------------------------------------
+#  镜像选择
 # ---------------------------------------------------------------------------
 resolve_mirror_url() {
   local base_url=""
 
   if [ "$MIRROR" = "auto" ]; then
-    # 自动选择：先试国内镜像，不通则 fallback
     log INFO "自动选择镜像..."
     for name in ghproxy nju npmmirror github; do
       local test_url="${MIRRORS[$name]}"
-      log INFO "  测试 $name ($test_url) ..."
+      log INFO "  测试 $name ..."
       if curl -sI --connect-timeout 5 --max-time 10 "$test_url" >/dev/null 2>&1; then
         log INFO "  $name 可达，使用此镜像。"
         MIRROR="$name"
@@ -238,11 +349,9 @@ resolve_mirror_url() {
     done
   fi
 
-  # 如果是预定义镜像名
   if [ -n "${MIRRORS[$MIRROR]+x}" ]; then
     base_url="${MIRRORS[$MIRROR]}"
   elif [[ "$MIRROR" == http* ]]; then
-    # 自定义 URL
     base_url="$MIRROR"
   else
     die "未知镜像: $MIRROR（可选: ${!MIRRORS[*]}，或传入完整 URL）"
@@ -256,46 +365,58 @@ resolve_mirror_url() {
 # ---------------------------------------------------------------------------
 download_python() {
   local base_url="$1"
-  local tmpdir
-  tmpdir=$(mktemp -d /tmp/install-python.XXXXXX)
-  trap "rm -rf '$tmpdir'" EXIT
 
-  # 需要知道精确文件名（包含完整版本号）
-  # 由于不同镜像的目录结构略有差异，分镜像处理 URL
-  # 通用策略：先尝试直接构造 URL，失败了再尝试列目录
+  # ---- 第一步：确定精确文件名 ----
+  local exact_filename=""
 
-  # 列出已知的 Python 小版本号（3.11 系列）
-  local -a known_versions
-  case "$VERSION" in
-    3.10) known_versions=(3.10.20 3.10.19 3.10.18 3.10.17 3.10.16) ;;
-    3.11) known_versions=(3.11.12 3.11.11 3.11.10 3.11.9 3.11.8) ;;
-    3.12) known_versions=(3.12.10 3.12.9 3.12.8 3.12.7 3.12.6) ;;
-    *)    die "不支持的版本: $VERSION（支持 3.10/3.11/3.12）" ;;
-  esac
+  # 策略 1: GitHub API 查询（最可靠）
+  exact_filename=$(discover_filename_via_api 2>/dev/null) || true
 
-  local suffix="install_only"
-  [ "$STRIP" -eq 1 ] && suffix="install_only_stripped"
+  # 策略 2: Release HTML 页面解析
+  if [ -z "$exact_filename" ]; then
+    exact_filename=$(discover_filename_via_html 2>/dev/null) || true
+  fi
 
+  # ---- 第二步：下载 ----
+  # DOWNLOAD_DIR 由调用者创建和清理，避免子 shell trap 问题
   local downloaded=""
-  for pyver in "${known_versions[@]}"; do
-    local filename="cpython-${pyver}+${RELEASE_TAG}-${ARCH}-unknown-linux-gnu-${suffix}.tar.gz"
-    local url="${base_url}/${RELEASE_TAG}/${filename}"
 
-    log INFO "尝试下载: $filename"
+  if [ -n "$exact_filename" ]; then
+    # 已知精确文件名，直接下载
+    local url="${base_url}/${RELEASE_TAG}/${exact_filename}"
+    log INFO "下载: $exact_filename"
     log INFO "  URL: $url"
 
-    if curl -fSL --connect-timeout 15 --max-time 300 --retry 2 \
-         -o "$tmpdir/$filename" "$url" 2>&1; then
-      downloaded="$tmpdir/$filename"
-      log INFO "下载成功: $filename ($(du -h "$downloaded" | awk '{print $1}'))"
-      break
+    if curl -fSL --connect-timeout 15 --max-time 600 --retry 3 --retry-delay 5 \
+         --progress-bar -o "$DOWNLOAD_DIR/$exact_filename" "$url"; then
+      downloaded="$DOWNLOAD_DIR/$exact_filename"
+      log INFO "下载成功 ($(du -h "$downloaded" | awk '{print $1}'))"
+    else
+      die "下载失败: $url"
     fi
+  else
+    # API 和 HTML 都查不到，暴力尝试版本号
+    log WARN "无法通过 API 查询精确版本，逐个尝试..."
+    local brute_versions
+    brute_versions=$(discover_filename_via_bruteforce)
 
-    log WARN "  $pyver 下载失败，尝试下一个版本..."
-  done
+    for pyver in $brute_versions; do
+      local filename="cpython-${pyver}+${RELEASE_TAG}-${ARCH}-unknown-linux-gnu-${FLAVOR}.tar.gz"
+      local url="${base_url}/${RELEASE_TAG}/${filename}"
+
+      log INFO "尝试: $filename"
+
+      if curl -fsSL --connect-timeout 10 --max-time 600 --retry 1 \
+           --progress-bar -o "$DOWNLOAD_DIR/$filename" "$url" 2>/dev/null; then
+        downloaded="$DOWNLOAD_DIR/$filename"
+        log INFO "下载成功: $filename ($(du -h "$downloaded" | awk '{print $1}'))"
+        break
+      fi
+    done
+  fi
 
   if [ -z "$downloaded" ]; then
-    die "所有版本均下载失败。请检查网络或使用 --from 参数指定离线包。"
+    die "所有方式均下载失败。请检查网络，或手动下载后使用 --from 参数安装。"
   fi
 
   echo "$downloaded"
@@ -401,6 +522,10 @@ main() {
     log INFO "离线安装: $tarball"
   else
     # ---- 在线模式 ----
+    # 在 main 中创建临时目录并注册清理，避免子 shell trap 问题
+    DOWNLOAD_DIR=$(mktemp -d /tmp/install-python.XXXXXX)
+    trap "rm -rf '$DOWNLOAD_DIR'" EXIT
+
     local base_url
     base_url=$(resolve_mirror_url)
     tarball=$(download_python "$base_url")
@@ -420,4 +545,3 @@ main() {
 }
 
 main
-
