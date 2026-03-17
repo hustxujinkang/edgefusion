@@ -3,6 +3,7 @@ import logging
 import logging.handlers
 import os
 from datetime import datetime
+from .runtime_paths import get_log_dir
 
 
 class Logger:
@@ -15,7 +16,7 @@ class Logger:
             cls._instance = super().__new__(cls)
         return cls._instance
     
-    def __init__(self, log_dir='logs', max_bytes=10485760, backup_count=5):
+    def __init__(self, log_dir=None, max_bytes=10485760, backup_count=5):
         """初始化日志管理器
         
         Args:
@@ -25,7 +26,7 @@ class Logger:
         """
         if not hasattr(self, 'initialized'):
             self.initialized = True
-            self.log_dir = log_dir
+            self.log_dir = log_dir or get_log_dir()
             self.max_bytes = max_bytes
             self.backup_count = backup_count
             
@@ -45,6 +46,7 @@ class Logger:
         # 清除现有处理器
         for handler in root_logger.handlers[:]:
             root_logger.removeHandler(handler)
+            handler.close()
         
         # 创建格式器
         formatter = logging.Formatter(

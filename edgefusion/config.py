@@ -2,18 +2,19 @@
 import yaml
 import os
 from typing import Dict, Any
+from .runtime_paths import get_config_file
 
 
 class Config:
     """配置管理类"""
     
-    def __init__(self, config_file: str = 'config.yaml'):
+    def __init__(self, config_file: str | None = None):
         """初始化配置
         
         Args:
             config_file: 配置文件路径
         """
-        self.config_file = config_file
+        self.config_file = config_file or get_config_file()
         self.config: Dict[str, Any] = {}
         self._load_config()
     

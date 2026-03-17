@@ -2,8 +2,8 @@
 from typing import Dict, Any, List
 from datetime import datetime
 from sqlalchemy import create_engine, Column, String, Float, Text, DateTime, JSON
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import declarative_base, sessionmaker
+from ..runtime_paths import get_database_url
 
 Base = declarative_base()
 
@@ -23,14 +23,14 @@ class DeviceData(Base):
 class Database:
     """数据库管理类"""
     
-    def __init__(self, db_url: str = 'sqlite:///edgefusion.db'):
+    def __init__(self, db_url: str | None = None):
         """初始化数据库
         
         Args:
             db_url: 数据库连接URL
         """
-        self.db_url = db_url
-        self.engine = create_engine(db_url, echo=False)
+        self.db_url = get_database_url(db_url)
+        self.engine = create_engine(self.db_url, echo=False)
         self.Session = sessionmaker(bind=self.engine)
         self._create_tables()
     

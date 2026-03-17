@@ -1,0 +1,8 @@
+# Runtime dependencies
+pymodbus==3.5.4
+paho-mqtt==1.6.1
+pyyaml==6.0.1
+sqlalchemy==2.0.30
+apscheduler==3.10.4
+flask==2.2.5
+prometheus-client==0.18.0

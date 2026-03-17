@@ -4,7 +4,7 @@
 
 项目定位如下：
 
-- Linux 是正式部署环境，推荐通过 `install.sh + run.sh + systemd` 管理
+- Linux 是正式部署环境，推荐通过 `deploy.sh` 完成首次部署
 - Windows 的 `start.bat` 仅用于开发和联调阶段的一键启动
 
 ## 功能特性
@@ -22,12 +22,43 @@
 ### Linux 正式部署
 
 ```bash
-chmod +x install.sh run.sh
-./install.sh
-./run.sh
+chmod +x deploy.sh run_local.sh backup.sh restore.sh
+sudo ./deploy.sh
 ```
 
-推荐进一步使用 `systemd` 托管服务，详见 [DEPLOYMENT.md](DEPLOYMENT.md)。
+`deploy.sh` 会自动完成以下动作：
+
+- 在未预设 `EDGEFUSION_*` 时交互式提示服务名、用户和目录，回车直接使用默认值
+- 将当前源码目录同步到标准 Linux 目录
+- 创建/复用 `.venv`
+- 安装生产依赖 `requirements-prod.txt`
+- 生成并安装 `systemd` 服务
+- `daemon-reload`
+- 启动或重启服务
+
+默认部署目录遵循 Linux 常见约定：
+
+- 程序目录：`/opt/edgefusion`
+- 配置目录：`/etc/edgefusion`
+- 数据目录：`/var/lib/edgefusion`
+- 日志目录：`/var/log/edgefusion`
+
+如需自定义用户、服务名或目录，可使用环境变量：
+
+```bash
+sudo \
+  EDGEFUSION_USER=edgefusion \
+  EDGEFUSION_SERVICE_NAME=edgefusion \
+  EDGEFUSION_APP_DIR=/opt/edgefusion \
+  EDGEFUSION_CONFIG_DIR=/etc/edgefusion \
+  EDGEFUSION_DATA_DIR=/var/lib/edgefusion \
+  EDGEFUSION_LOG_DIR=/var/log/edgefusion \
+  ./deploy.sh
+```
+
+后续升级时，在新的源码目录执行同一条 `sudo ./deploy.sh` 即可，已有配置、数据库和日志会保留。
+
+如需完全跳过交互，可同时传入 `EDGEFUSION_*` 和 `EDGEFUSION_NONINTERACTIVE=1`。本地联调请使用 `run_local.sh` 或 Windows 下的 `start.bat`。详见 [DEPLOYMENT.md](DEPLOYMENT.md)。
 
 ### Windows 开发联调
 
@@ -51,10 +82,22 @@ start.bat --reinstall
 
 ### 手动启动主程序
 
+Linux 本地联调推荐直接执行：
+
+```bash
+./run_local.sh
+```
+
+`run_local.sh` 会自动检测 Python 3.10/3.11/3.12、创建 `.venv`、安装 `requirements.txt`，然后以项目目录下的本地路径语义启动程序。  
+如需强制重装依赖，可执行：
+
+```bash
+./run_local.sh --reinstall
+```
+
 如果你希望手动使用虚拟环境，建议使用 Python 3.10、3.11 或 3.12：
 
 ```bash
-# Linux
 python3.10 -m venv .venv
 . .venv/bin/activate
 pip install -r requirements.txt
@@ -118,9 +161,12 @@ edgefusion/
 ├── config.yaml
 ├── requirements.txt
 ├── start.bat
-├── install.sh
-├── run.sh
-├── edgefusion.service
+├── deploy.sh
+├── runtime-env.sh
+├── run_local.sh
+├── backup.sh
+├── restore.sh
+├── edgefusion.service.template
 └── DEPLOYMENT.md
 ```
 

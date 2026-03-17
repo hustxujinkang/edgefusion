@@ -1,6 +1,6 @@
 # EdgeFusion 使用指南
 
-本文档面向开发联调和功能测试，重点说明本地虚拟环境、模拟器、Web 界面和 API 的使用方式。Linux 正式部署请查看 [DEPLOYMENT.md](DEPLOYMENT.md)。
+本文档面向开发联调和功能测试，重点说明本地虚拟环境、模拟器、Web 界面和 API 的使用方式。Linux 正式部署请优先使用 `deploy.sh`，详见 [DEPLOYMENT.md](DEPLOYMENT.md)。
 
 ## 目录
 
@@ -18,9 +18,14 @@
 ### Linux
 
 ```bash
-python3.10 -m venv .venv
-. .venv/bin/activate
-pip install -r requirements.txt
+./run_local.sh
+```
+
+`run_local.sh` 会自动创建 `.venv`、安装 `requirements.txt`，并使用项目目录内的本地配置、日志和数据库路径启动程序。  
+如需强制重装依赖，可执行：
+
+```bash
+./run_local.sh --reinstall
 ```
 
 ### Windows PowerShell
@@ -84,7 +89,7 @@ python modbus_charger_simulator.py --model generic
 在另一个终端中启动主程序：
 
 ```bash
-python -m edgefusion.main
+./run_local.sh
 ```
 
 如果没有激活虚拟环境，也可以直接使用虚拟环境解释器：
@@ -328,8 +333,12 @@ python modbus_charger_simulator.py --port 5020 --model xj_dc_120kw
 
 **A：**
 
-- 设备数据：`edgefusion.db`（SQLite 数据库）
-- 日志文件：`logs/` 目录（按日期分割）
+- 本地联调使用 `./run_local.sh` 或直接运行 `python -m edgefusion.main` 时：
+  - 设备数据：`edgefusion.db`
+  - 日志文件：`logs/` 目录（按日期分割）
+- Linux 生产部署使用 `deploy.sh` 时：
+  - 设备数据：`/var/lib/edgefusion/edgefusion.db`
+  - 日志文件：`/var/log/edgefusion/`
 
 ### Q: Web 界面无法访问？
 

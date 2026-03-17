@@ -1,0 +1,26 @@
+# Replace the __EDGEFUSION_*__ placeholders before installing.
+[Unit]
+Description=EdgeFusion Backend
+After=network.target
+
+[Service]
+Type=simple
+User=__EDGEFUSION_USER__
+Group=__EDGEFUSION_USER__
+WorkingDirectory=__EDGEFUSION_PROJECT_DIR__
+Environment=PYTHONUNBUFFERED=1
+Environment=EDGEFUSION_SERVICE_NAME=__EDGEFUSION_SERVICE_NAME__
+Environment=EDGEFUSION_CONFIG_DIR=__EDGEFUSION_CONFIG_DIR__
+Environment=EDGEFUSION_DATA_DIR=__EDGEFUSION_DATA_DIR__
+Environment=EDGEFUSION_LOG_DIR=__EDGEFUSION_LOG_DIR__
+Environment=EDGEFUSION_CONFIG_FILE=__EDGEFUSION_CONFIG_FILE__
+Environment=EDGEFUSION_DB_PATH=__EDGEFUSION_DB_PATH__
+Environment=EDGEFUSION_DB_URL=__EDGEFUSION_DB_URL__
+ExecStart=__EDGEFUSION_PROJECT_DIR__/.venv/bin/python -m edgefusion.main
+Restart=always
+RestartSec=5
+KillSignal=SIGINT
+TimeoutStopSec=20
+
+[Install]
+WantedBy=multi-user.target
