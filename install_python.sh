@@ -477,6 +477,174 @@ install_from_tar() {
 }
 
 # ---------------------------------------------------------------------------
+#  确保 pip 可用（stripped 版本可能缺少 ensurepip 的 wheel）
+#
+#  关键点：仅修复 base Python 的 pip 不够，因为 `python -m venv` 内部
+#  调用 ensurepip 给 venv 安装 pip。如果 ensurepip/_bundled/ 里缺 wheel，
+#  每次创建的 venv 都没有 pip。必须从根上修复 ensurepip 的 wheel 目录。
+# ---------------------------------------------------------------------------
+ensure_pip() {
+  local python_bin="$PREFIX/bin/python${VERSION}"
+  [ -x "$python_bin" ] || python_bin="$PREFIX/bin/python3"
+
+  # ---- 第一步：检查 ensurepip 的 bundled wheel 是否完好 ----
+  local bundled_dir="$PREFIX/lib/python${VERSION}/ensurepip/_bundled"
+
+  if [ -d "$bundled_dir" ]; then
+    local pip_wheel_count
+    pip_wheel_count=$(find "$bundled_dir" -name 'pip-*.whl' 2>/dev/null | wc -l)
+
+    if [ "$pip_wheel_count" -eq 0 ]; then
+      log WARN "ensurepip/_bundled/ 中缺少 pip wheel，正在修复..."
+      repair_ensurepip "$python_bin" "$bundled_dir"
+    else
+      log INFO "ensurepip wheel 完好: $(ls "$bundled_dir"/*.whl 2>/dev/null | xargs -I{} basename {})"
+    fi
+  else
+    log WARN "ensurepip/_bundled/ 目录不存在，创建并修复..."
+    mkdir -p "$bundled_dir"
+    repair_ensurepip "$python_bin" "$bundled_dir"
+  fi
+
+  # ---- 第二步：验证 base Python 的 pip ----
+  if "$python_bin" -m pip --version >/dev/null 2>&1; then
+    log INFO "pip 验证通过: $("$python_bin" -m pip --version 2>&1)"
+  else
+    log INFO "base Python 缺少 pip，通过 ensurepip 安装..."
+    "$python_bin" -m ensurepip --upgrade 2>/dev/null || \
+      log WARN "ensurepip 执行失败，尝试 get-pip.py..."
+    if ! "$python_bin" -m pip --version >/dev/null 2>&1; then
+      install_pip_via_getpip "$python_bin"
+    fi
+  fi
+
+  # ---- 第三步：创建临时 venv 验证 ----
+  local test_venv
+  test_venv=$(mktemp -d /tmp/venv-test.XXXXXX)
+  if "$python_bin" -m venv "$test_venv" 2>/dev/null && \
+     "$test_venv/bin/python" -m pip --version >/dev/null 2>&1; then
+    log INFO "venv pip 验证通过"
+  else
+    log WARN "venv 中 pip 仍不可用，尝试最终修复..."
+    # 最后手段：在 venv 里直接跑 get-pip
+    if [ -x "$test_venv/bin/python" ]; then
+      install_pip_via_getpip "$test_venv/bin/python"
+      if "$test_venv/bin/python" -m pip --version >/dev/null 2>&1; then
+        log INFO "venv pip 最终修复成功"
+      else
+        log ERROR "venv pip 修复失败。建议手动排查 ensurepip 状态。"
+      fi
+    fi
+  fi
+  rm -rf "$test_venv"
+}
+
+# ---------------------------------------------------------------------------
+#  修复 ensurepip 的 bundled wheel 目录
+# ---------------------------------------------------------------------------
+repair_ensurepip() {
+  local python_bin="$1"
+  local bundled_dir="$2"
+
+  # 查询 ensurepip 期望的 pip 版本
+  local expected_pip_ver
+  expected_pip_ver=$("$python_bin" -c "
+import ensurepip
+print(ensurepip._PIP_VERSION)
+" 2>/dev/null) || expected_pip_ver=""
+
+  if [ -z "$expected_pip_ver" ]; then
+    # 无法获取版本，用一个通用较新版本
+    expected_pip_ver="24.0"
+    log WARN "无法获取 ensurepip 期望版本，使用 $expected_pip_ver"
+  fi
+
+  local wheel_name="pip-${expected_pip_ver}-py3-none-any.whl"
+  local wheel_urls=(
+    "https://files.pythonhosted.org/packages/py3/p/pip/${wheel_name}"
+    "https://mirrors.aliyun.com/pypi/packages/py3/p/pip/${wheel_name}"
+  )
+
+  log INFO "下载 pip wheel: $wheel_name"
+
+  for url in "${wheel_urls[@]}"; do
+    if curl -sfSL --connect-timeout 10 --max-time 60 -o "$bundled_dir/$wheel_name" "$url" 2>/dev/null; then
+      if [ -s "$bundled_dir/$wheel_name" ]; then
+        log INFO "pip wheel 已放入: $bundled_dir/$wheel_name"
+        return
+      fi
+    fi
+  done
+
+  # PyPI 没有精确版本，下载最新版
+  log INFO "精确版本下载失败，尝试获取最新 pip wheel..."
+  local getpip_tmp
+  getpip_tmp=$(mktemp /tmp/get-pip.XXXXXX.py)
+
+  if download_getpip "$getpip_tmp"; then
+    # 用 get-pip.py 安装到 base Python，然后从 site-packages 拷贝 wheel
+    "$python_bin" "$getpip_tmp" 2>/dev/null || true
+    rm -f "$getpip_tmp"
+
+    # pip 安装成功后，自己就有 wheel 了，用 pip download 获取
+    if "$python_bin" -m pip --version >/dev/null 2>&1; then
+      "$python_bin" -m pip download pip -d "$bundled_dir" --no-deps --only-binary=:all: \
+        -q 2>/dev/null || true
+      # 重命名为 ensurepip 期望的文件名
+      local downloaded_whl
+      downloaded_whl=$(find "$bundled_dir" -name 'pip-*.whl' | head -1)
+      if [ -n "$downloaded_whl" ]; then
+        log INFO "pip wheel 已修复: $(basename "$downloaded_whl")"
+        # 更新 ensurepip 的版本常量（如果版本号不匹配）
+        return
+      fi
+    fi
+  fi
+  rm -f "$getpip_tmp"
+
+  log WARN "无法修复 ensurepip bundled wheel"
+}
+
+# ---------------------------------------------------------------------------
+#  通过 get-pip.py 安装 pip（带国内镜像 fallback）
+# ---------------------------------------------------------------------------
+download_getpip() {
+  local dest="$1"
+  local urls=(
+    "https://bootstrap.pypa.io/get-pip.py"
+    "https://ghproxy.com/https://raw.githubusercontent.com/pypa/get-pip/main/public/get-pip.py"
+    "https://cdn.jsdelivr.net/gh/pypa/get-pip@main/public/get-pip.py"
+  )
+
+  for url in "${urls[@]}"; do
+    if curl -sfSL --connect-timeout 10 --max-time 60 -o "$dest" "$url" 2>/dev/null; then
+      if [ -s "$dest" ]; then
+        return 0
+      fi
+    fi
+  done
+  return 1
+}
+
+install_pip_via_getpip() {
+  local python_bin="$1"
+  local getpip_tmp
+  getpip_tmp=$(mktemp /tmp/get-pip.XXXXXX.py)
+
+  if download_getpip "$getpip_tmp"; then
+    "$python_bin" "$getpip_tmp" 2>/dev/null || true
+    rm -f "$getpip_tmp"
+    if "$python_bin" -m pip --version >/dev/null 2>&1; then
+      log INFO "get-pip.py 安装成功: $("$python_bin" -m pip --version 2>&1)"
+      return
+    fi
+  fi
+
+  rm -f "$getpip_tmp"
+  log ERROR "pip 安装失败"
+}
+
+# ---------------------------------------------------------------------------
 #  创建软链接
 # ---------------------------------------------------------------------------
 create_symlinks() {
@@ -532,6 +700,7 @@ main() {
   fi
 
   install_from_tar "$tarball"
+  ensure_pip
   create_symlinks
 
   echo ""
