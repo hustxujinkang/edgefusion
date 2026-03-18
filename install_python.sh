@@ -541,68 +541,81 @@ ensure_pip() {
 
 # ---------------------------------------------------------------------------
 #  修复 ensurepip 的 bundled wheel 目录
+#
+#  策略: 先确保 base Python 有 pip → 用 pip download 拿到 wheel
+#       → 放入 ensurepip/_bundled/ → 更新 __init__.py 版本常量
 # ---------------------------------------------------------------------------
 repair_ensurepip() {
   local python_bin="$1"
   local bundled_dir="$2"
 
-  # 查询 ensurepip 期望的 pip 版本
-  local expected_pip_ver
-  expected_pip_ver=$("$python_bin" -c "
-import ensurepip
-print(ensurepip._PIP_VERSION)
-" 2>/dev/null) || expected_pip_ver=""
-
-  if [ -z "$expected_pip_ver" ]; then
-    # 无法获取版本，用一个通用较新版本
-    expected_pip_ver="24.0"
-    log WARN "无法获取 ensurepip 期望版本，使用 $expected_pip_ver"
+  # ---- 先确保 base Python 自己有 pip ----
+  if ! "$python_bin" -m pip --version >/dev/null 2>&1; then
+    log INFO "base Python 缺少 pip，先通过 get-pip.py 安装..."
+    install_pip_via_getpip "$python_bin"
   fi
 
-  local wheel_name="pip-${expected_pip_ver}-py3-none-any.whl"
-  local wheel_urls=(
-    "https://files.pythonhosted.org/packages/py3/p/pip/${wheel_name}"
-    "https://mirrors.aliyun.com/pypi/packages/py3/p/pip/${wheel_name}"
-  )
+  if ! "$python_bin" -m pip --version >/dev/null 2>&1; then
+    log ERROR "无法安装 pip，放弃修复 ensurepip"
+    return 1
+  fi
 
-  log INFO "下载 pip wheel: $wheel_name"
+  # ---- 查询 ensurepip 期望的版本 ----
+  local expected_ver
+  expected_ver=$("$python_bin" -c "import ensurepip; print(ensurepip._PIP_VERSION)" 2>/dev/null) || expected_ver=""
 
-  for url in "${wheel_urls[@]}"; do
-    if curl -sfSL --connect-timeout 10 --max-time 60 -o "$bundled_dir/$wheel_name" "$url" 2>/dev/null; then
-      if [ -s "$bundled_dir/$wheel_name" ]; then
-        log INFO "pip wheel 已放入: $bundled_dir/$wheel_name"
-        return
-      fi
-    fi
-  done
+  # ---- 用 pip download 获取 wheel ----
+  log INFO "通过 pip download 获取 pip wheel..."
 
-  # PyPI 没有精确版本，下载最新版
-  log INFO "精确版本下载失败，尝试获取最新 pip wheel..."
-  local getpip_tmp
-  getpip_tmp=$(mktemp /tmp/get-pip.XXXXXX.py)
+  # 清理旧的 wheel
+  rm -f "$bundled_dir"/pip-*.whl
 
-  if download_getpip "$getpip_tmp"; then
-    # 用 get-pip.py 安装到 base Python，然后从 site-packages 拷贝 wheel
-    "$python_bin" "$getpip_tmp" 2>/dev/null || true
-    rm -f "$getpip_tmp"
+  local pip_index=""
+  # 检测 pypi.org 是否可达，不可达则用阿里云镜像
+  if ! curl -sI --connect-timeout 5 "https://pypi.org" >/dev/null 2>&1; then
+    pip_index="-i https://mirrors.aliyun.com/pypi/simple/ --trusted-host mirrors.aliyun.com"
+  fi
 
-    # pip 安装成功后，自己就有 wheel 了，用 pip download 获取
-    if "$python_bin" -m pip --version >/dev/null 2>&1; then
-      "$python_bin" -m pip download pip -d "$bundled_dir" --no-deps --only-binary=:all: \
-        -q 2>/dev/null || true
-      # 重命名为 ensurepip 期望的文件名
-      local downloaded_whl
-      downloaded_whl=$(find "$bundled_dir" -name 'pip-*.whl' | head -1)
-      if [ -n "$downloaded_whl" ]; then
-        log INFO "pip wheel 已修复: $(basename "$downloaded_whl")"
-        # 更新 ensurepip 的版本常量（如果版本号不匹配）
-        return
-      fi
+  if [ -n "$expected_ver" ]; then
+    # 下载 ensurepip 期望的精确版本
+    # shellcheck disable=SC2086
+    "$python_bin" -m pip download "pip==${expected_ver}" \
+      -d "$bundled_dir" --no-deps --only-binary=:all: \
+      $pip_index -q 2>/dev/null || true
+  fi
+
+  # 如果精确版本没下到（可能太老了 PyPI 没有），下最新版
+  if [ -z "$(find "$bundled_dir" -name 'pip-*.whl' 2>/dev/null)" ]; then
+    log INFO "精确版本 ${expected_ver} 未找到，下载最新版..."
+    # shellcheck disable=SC2086
+    "$python_bin" -m pip download pip \
+      -d "$bundled_dir" --no-deps --only-binary=:all: \
+      $pip_index -q 2>/dev/null || true
+  fi
+
+  # ---- 验证并修正版本常量 ----
+  local actual_whl
+  actual_whl=$(find "$bundled_dir" -name 'pip-*.whl' 2>/dev/null | head -1)
+
+  if [ -z "$actual_whl" ]; then
+    log ERROR "pip wheel 下载失败"
+    return 1
+  fi
+
+  local actual_ver
+  actual_ver=$(basename "$actual_whl" | sed -n 's/pip-\([^-]*\)-.*/\1/p')
+  log INFO "pip wheel 已就位: $(basename "$actual_whl")"
+
+  # 如果下载的版本和 ensurepip 期望的不一致，patch __init__.py
+  if [ -n "$expected_ver" ] && [ "$actual_ver" != "$expected_ver" ]; then
+    local init_py="$PREFIX/lib/python${VERSION}/ensurepip/__init__.py"
+    if [ -f "$init_py" ]; then
+      log INFO "更新 ensurepip 版本常量: $expected_ver -> $actual_ver"
+      sed -i "s/_PIP_VERSION = \"${expected_ver}\"/_PIP_VERSION = \"${actual_ver}\"/" "$init_py"
     fi
   fi
-  rm -f "$getpip_tmp"
 
-  log WARN "无法修复 ensurepip bundled wheel"
+  return 0
 }
 
 # ---------------------------------------------------------------------------
@@ -730,3 +743,4 @@ main() {
 }
 
 main
+
