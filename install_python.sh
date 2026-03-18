@@ -220,9 +220,9 @@ if [ "$UNINSTALL" -eq 1 ]; then
     exit 0
   fi
 
-  # 删除软链接
-  for bin in python${VERSION} pip${VERSION}; do
-    local_link="/usr/local/bin/$bin"
+  # 删除软链接（包括通用名 pip, pip3, python, python3）
+  for name in "python${VERSION}" python3 python "pip${VERSION}" pip3 pip; do
+    local_link="/usr/local/bin/$name"
     if [ -L "$local_link" ] && readlink "$local_link" | grep -q "$PREFIX"; then
       rm -f "$local_link"
       log INFO "已删除软链接: $local_link"
@@ -650,22 +650,38 @@ install_pip_via_getpip() {
 create_symlinks() {
   [ "$SYMLINK" -eq 0 ] && return
 
-  local python_bin="$PREFIX/bin/python${VERSION}"
-  [ -x "$python_bin" ] || python_bin="$PREFIX/bin/python3"
+  local python_src="$PREFIX/bin/python${VERSION}"
+  [ -x "$python_src" ] || python_src="$PREFIX/bin/python3"
 
-  local pip_bin="$PREFIX/bin/pip${VERSION}"
-  [ -x "$pip_bin" ] || pip_bin="$PREFIX/bin/pip3"
+  local pip_src="$PREFIX/bin/pip${VERSION}"
+  [ -x "$pip_src" ] || pip_src="$PREFIX/bin/pip3"
 
-  for pair in "$python_bin:python${VERSION}" "$pip_bin:pip${VERSION}"; do
-    local src="${pair%%:*}"
-    local name="${pair##*:}"
-    local dest="/usr/local/bin/$name"
+  # python3.11, python3, python — 从精确到通用
+  if [ -x "$python_src" ]; then
+    for name in "python${VERSION}" python3 python; do
+      local dest="/usr/local/bin/$name"
+      # 通用名（python3, python）仅在不存在或已指向本安装时才覆盖
+      if [ "$name" = "python${VERSION}" ] || [ ! -e "$dest" ] || readlink "$dest" 2>/dev/null | grep -q "$PREFIX"; then
+        ln -sf "$python_src" "$dest"
+        log INFO "软链接: $dest -> $python_src"
+      else
+        log INFO "跳过 $dest（已存在且指向其他版本）"
+      fi
+    done
+  fi
 
-    if [ -x "$src" ]; then
-      ln -sf "$src" "$dest"
-      log INFO "软链接: $dest -> $src"
-    fi
-  done
+  # pip3.11, pip3, pip
+  if [ -x "$pip_src" ]; then
+    for name in "pip${VERSION}" pip3 pip; do
+      local dest="/usr/local/bin/$name"
+      if [ "$name" = "pip${VERSION}" ] || [ ! -e "$dest" ] || readlink "$dest" 2>/dev/null | grep -q "$PREFIX"; then
+        ln -sf "$pip_src" "$dest"
+        log INFO "软链接: $dest -> $pip_src"
+      else
+        log INFO "跳过 $dest（已存在且指向其他版本）"
+      fi
+    done
+  fi
 }
 
 # ---------------------------------------------------------------------------
