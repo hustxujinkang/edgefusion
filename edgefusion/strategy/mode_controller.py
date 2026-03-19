@@ -349,7 +349,7 @@ class ModeControllerStrategy(StrategyBase):
 
             if device_type == "energy_storage" and int(data.get("max_charge_power", 0)) > 0:
                 return True
-            if device_type == "charging_station":
+            if device_type in {"charging_station", "charging_connector"}:
                 current_power = int(data.get("power", 0))
                 max_power = int(data.get("max_power", current_power))
                 if str(data.get("status", "")).lower() == "charging" and max_power > current_power:
@@ -451,6 +451,10 @@ class ModeControllerStrategy(StrategyBase):
                         "status": device_info.get("status", "online"),
                     }
                 )
+                if "pile_id" in device_info:
+                    base_info["pile_id"] = device_info.get("pile_id")
+                if "connector_id" in device_info:
+                    base_info["connector_id"] = device_info.get("connector_id")
             devices.append(base_info)
         return devices
 

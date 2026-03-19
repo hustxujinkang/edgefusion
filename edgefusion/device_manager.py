@@ -1,6 +1,9 @@
 # 设备管理模块
 from typing import Dict, Any, List, Optional
+from .charger_layout import build_connector_views, normalize_charger_pile
+from .point_tables import get_device_default_maps
 from .protocol import ProtocolBase, ModbusProtocol, MQTTProtocol, OCPPProtocol, SimulationProtocol
+from .register_map import resolve_read_register, resolve_write_register
 from .logger import get_logger
 
 
@@ -22,6 +25,16 @@ class DeviceManager:
 
     def _normalize_device_info(self, device_info: Dict[str, Any]) -> Dict[str, Any]:
         normalized = dict(device_info)
+        default_maps = get_device_default_maps(normalized)
+        for key, value in default_maps.items():
+            if key in {"telemetry_map", "control_map"} and isinstance(value, dict):
+                merged = dict(value)
+                if isinstance(normalized.get(key), dict):
+                    merged.update(normalized[key])
+                normalized[key] = merged
+            else:
+                normalized.setdefault(key, value)
+
         protocol_name = normalized.get('protocol')
 
         if normalized.get('source') not in {'real', 'simulated'}:
@@ -29,7 +42,19 @@ class DeviceManager:
 
         raw_status = str(normalized.get('status', 'online')).lower()
         normalized['status'] = 'offline' if raw_status == 'offline' else 'online'
-        return normalized
+        return normalize_charger_pile(normalized)
+
+    def _get_connector_view(self, device_id: str, *, include_candidates: bool = False) -> Optional[Dict[str, Any]]:
+        collections = [self.devices.values()]
+        if include_candidates:
+            collections.append(self.device_candidates.values())
+
+        for collection in collections:
+            for device_info in collection:
+                for connector in build_connector_views(device_info):
+                    if connector.get("device_id") == device_id:
+                        return connector
+        return None
     
     def _init_protocols(self):
         """初始化协议实例"""
@@ -260,13 +285,19 @@ class DeviceManager:
         Returns:
             Optional[Dict[str, Any]]: 设备信息，不存在返回None
         """
-        return self.devices.get(device_id)
+        device = self.devices.get(device_id)
+        if device:
+            return device
+        return self._get_connector_view(device_id)
 
     def get_device_candidate(self, device_id: str) -> Optional[Dict[str, Any]]:
-        return self.device_candidates.get(device_id)
+        device = self.device_candidates.get(device_id)
+        if device:
+            return device
+        return self._get_connector_view(device_id, include_candidates=True)
 
     def is_device_connected(self, device_id: str) -> bool:
-        return device_id in self.devices
+        return device_id in self.devices or self._get_connector_view(device_id) is not None
     
     def get_devices(self, device_type: Optional[str] = None) -> List[Dict[str, Any]]:
         """获取设备列表
@@ -285,6 +316,14 @@ class DeviceManager:
         if device_type:
             return [device for device in self.device_candidates.values() if device.get('type') == device_type]
         return list(self.device_candidates.values())
+
+    def get_device_connectors(self, device_id: str, include_candidates: bool = False) -> List[Dict[str, Any]]:
+        device_info = self.devices.get(device_id)
+        if device_info is None and include_candidates:
+            device_info = self.device_candidates.get(device_id)
+        if not device_info:
+            return []
+        return build_connector_views(device_info)
     
     def read_device_data(self, device_id: str, register: str) -> Optional[Any]:
         """读取设备数据
@@ -312,7 +351,9 @@ class DeviceManager:
                 self.logger.warning(f"协议未连接: {protocol_name}")
                 return None
             
-            return protocol.read_data(device_id, register)
+            io_device_id = device_info.get('io_device_id', device_id)
+            protocol_register = resolve_read_register(device_info, register)
+            return protocol.read_data(io_device_id, protocol_register)
         except Exception as e:
             self.logger.error(f"读取设备数据失败: {e}")
             return None
@@ -344,7 +385,9 @@ class DeviceManager:
                 self.logger.warning(f"协议未连接: {protocol_name}")
                 return False
             
-            return protocol.write_data(device_id, register, value)
+            io_device_id = device_info.get('io_device_id', device_id)
+            protocol_register = resolve_write_register(device_info, register)
+            return protocol.write_data(io_device_id, protocol_register, value)
         except Exception as e:
             self.logger.error(f"写入设备数据失败: {e}")
             return False

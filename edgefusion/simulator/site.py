@@ -119,13 +119,23 @@ class SiteSimulator:
         info = {}
         for device_id, simulator in self.devices.items():
             raw_status = str(simulator.get_status()).lower()
-            info[device_id] = {
+            device_info = {
                 "device_id": device_id,
                 "type": simulator.device_type,
                 "protocol": "simulation",
                 "source": "simulated",
                 "status": "offline" if raw_status == "offline" else "online",
             }
+            if simulator.device_type == "charging_station":
+                device_info["connector_count"] = 1
+                device_info["connectors"] = [
+                    {
+                        "device_id": f"{device_id}:1",
+                        "connector_id": 1,
+                        "io_device_id": device_id,
+                    }
+                ]
+            info[device_id] = device_info
         return info
 
     def read_device_data(self, device_id: str, register: str):

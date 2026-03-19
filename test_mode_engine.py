@@ -37,6 +37,9 @@ class _FakeDeviceManager:
     def get_device(self, device_id):
         return self.devices.get(device_id)
 
+    def get_devices(self):
+        return list(self.devices.values())
+
 
 def test_build_site_state_marks_missing_grid_power_as_untrusted():
     state = build_site_state(
@@ -119,8 +122,8 @@ def test_export_protect_allocates_storage_then_active_chargers_then_pv_curtailme
                 },
             ),
             _snapshot(
-                "charger-1",
-                "charging_station",
+                "charger-1:1",
+                "charging_connector",
                 {
                     "status": "Charging",
                     "power": 3000,
@@ -129,8 +132,8 @@ def test_export_protect_allocates_storage_then_active_chargers_then_pv_curtailme
                 },
             ),
             _snapshot(
-                "charger-2",
-                "charging_station",
+                "charger-2:1",
+                "charging_connector",
                 {
                     "status": "Charging",
                     "power": 2000,
@@ -157,8 +160,8 @@ def test_export_protect_allocates_storage_then_active_chargers_then_pv_curtailme
     assert plan.remaining_gap_w == 0
     assert [(action.device_id, action.action) for action in plan.actions] == [
         ("storage-1", "set_charge_power"),
-        ("charger-1", "set_power_limit"),
-        ("charger-2", "set_power_limit"),
+        ("charger-1:1", "set_power_limit"),
+        ("charger-2:1", "set_power_limit"),
         ("pv-1", "set_power_limit"),
     ]
     assert plan.actions[0].value_w == 3000
@@ -172,8 +175,8 @@ def test_export_protect_splits_charger_headroom_evenly_with_caps():
         [
             _snapshot("grid-meter-1", "grid_meter", {"power": -8500, "status": "online"}),
             _snapshot(
-                "charger-1",
-                "charging_station",
+                "charger-1:1",
+                "charging_connector",
                 {
                     "status": "Charging",
                     "power": 2000,
@@ -182,8 +185,8 @@ def test_export_protect_splits_charger_headroom_evenly_with_caps():
                 },
             ),
             _snapshot(
-                "charger-2",
-                "charging_station",
+                "charger-2:1",
+                "charging_connector",
                 {
                     "status": "Charging",
                     "power": 1000,
@@ -198,8 +201,8 @@ def test_export_protect_splits_charger_headroom_evenly_with_caps():
     plan = plan_export_protect(state, {"export_limit_w": 5000})
     charger_actions = {action.device_id: action for action in plan.actions}
 
-    assert charger_actions["charger-1"].delta_w == 1000
-    assert charger_actions["charger-2"].delta_w == 2500
+    assert charger_actions["charger-1:1"].delta_w == 1000
+    assert charger_actions["charger-2:1"].delta_w == 2500
 
 
 def test_mode_controller_uses_collector_snapshots_and_executes_export_actions():
@@ -212,8 +215,8 @@ def test_mode_controller_uses_collector_snapshots_and_executes_export_actions():
                 {"status": "online", "power": 0, "soc": 40, "max_charge_power": 2500},
             ),
             _snapshot(
-                "charger-1",
-                "charging_station",
+                "charger-1:1",
+                "charging_connector",
                 {"status": "Charging", "power": 2000, "max_power": 3500, "min_power": 1000},
             ),
         ]
@@ -236,7 +239,7 @@ def test_mode_controller_uses_collector_snapshots_and_executes_export_actions():
     assert device_manager.writes == [
         ("storage-1", "mode", "charge"),
         ("storage-1", "charge_power", 2500),
-        ("charger-1", "power_limit", 3500),
+        ("charger-1:1", "power_limit", 3500),
     ]
 
 
@@ -306,7 +309,7 @@ def test_mode_controller_stays_monitor_only_without_real_control_path():
             _snapshot("grid_meter_real", "grid_meter", {"power": -9000, "status": "online"}),
             _snapshot(
                 "charger_sim",
-                "charging_station",
+                "charging_connector",
                 {"status": "Charging", "power": 2000, "max_power": 3500, "min_power": 1000},
             ),
         ]
@@ -334,3 +337,48 @@ def test_mode_controller_stays_monitor_only_without_real_control_path():
     assert result["reason"] == "no_export_control_capability"
     assert result["actions"] == []
     assert device_manager.writes == []
+
+
+def test_mode_controller_includes_connector_metadata_in_participating_devices():
+    collector = _FakeCollector(
+        [
+            _snapshot("grid-meter-1", "grid_meter", {"power": -6500, "status": "online"}),
+            {
+                "device_id": "charger-pile-1:1",
+                "device_type": "charging_connector",
+                "pile_id": "charger-pile-1",
+                "connector_id": 1,
+                "timestamp": datetime.now().isoformat(),
+                "data": {"status": "Charging", "power": 1200, "max_power": 3000, "min_power": 1000},
+            },
+        ]
+    )
+    device_manager = _FakeDeviceManager(
+        {
+            "grid-meter-1": {"device_id": "grid-meter-1", "source": "real", "status": "online"},
+            "charger-pile-1:1": {
+                "device_id": "charger-pile-1:1",
+                "type": "charging_connector",
+                "pile_id": "charger-pile-1",
+                "connector_id": 1,
+                "source": "real",
+                "status": "online",
+            },
+        }
+    )
+    controller = ModeControllerStrategy(
+        {
+            "use_simulated_devices": True,
+            "state": {"max_data_age_seconds": 30},
+            "mode": {"export_limit_w": 5000, "export_enter_ratio": 1.0},
+        },
+        device_manager,
+        collector,
+    )
+
+    controller.start()
+    summary = controller.get_mode_summary()
+
+    connector_entry = next(item for item in summary["participating_devices"] if item["device_id"] == "charger-pile-1:1")
+    assert connector_entry["device_type"] == "charging_connector"
+    assert connector_entry["source"] == "real"

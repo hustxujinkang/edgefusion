@@ -1,6 +1,7 @@
 import werkzeug
 
 from edgefusion.device_manager import DeviceManager
+from edgefusion.charger_layout import build_connector_device_id
 from edgefusion.monitor.dashboard import Dashboard
 from edgefusion.strategy.mode_controller import ModeControllerStrategy
 
@@ -65,6 +66,22 @@ class FakeModbusProtocol:
     def disconnect(self):
         self.connected = False
         return True
+
+
+class RecordingDeviceManager(DeviceManager):
+    def __init__(self):
+        super().__init__({"modbus": {"host": "127.0.0.1", "port": 1502}})
+        self.write_calls = []
+        self.read_values = {}
+        self.read_calls = []
+
+    def write_device_data(self, device_id, register, value):
+        self.write_calls.append((device_id, register, value))
+        return True
+
+    def read_device_data(self, device_id, register):
+        self.read_calls.append((device_id, register))
+        return self.read_values.get((device_id, register))
 
 
 def build_dashboard(device_manager, collector=None):
@@ -218,6 +235,22 @@ def test_activate_candidate_keeps_candidate_inventory_and_marks_connected():
     assert candidate_response.status_code == 200
     assert candidate_response.get_json() == [
         {
+            "connector_count": 1,
+            "connectors": [
+                {
+                    "connector_id": 1,
+                    "device_id": "charger-candidate:1",
+                    "host": "127.0.0.1",
+                    "io_device_id": "charger-candidate",
+                    "pile_id": "charger-candidate",
+                    "port": 1502,
+                    "protocol": "modbus",
+                    "source": "real",
+                    "status": "online",
+                    "type": "charging_connector",
+                    "unit_id": 1,
+                }
+            ],
             "device_id": "charger-candidate",
             "type": "charging_station",
             "protocol": "modbus",
@@ -229,6 +262,171 @@ def test_activate_candidate_keeps_candidate_inventory_and_marks_connected():
             "connected": True,
         }
     ]
+
+
+def test_collector_latest_endpoint_surfaces_connector_snapshots_from_pile_inventory():
+    latest_data = [
+        {
+            "device_id": "charger_0:1",
+            "device_type": "charging_connector",
+            "pile_id": "charger_0",
+            "connector_id": 1,
+            "timestamp": "2026-03-19T15:00:00",
+            "data": {"status": "Charging", "power": 1800, "max_power": 5000, "min_power": 1000},
+        }
+    ]
+    dashboard = build_dashboard(DeviceManager({}), collector=DummyCollector(latest_data=latest_data))
+    client = dashboard.app.test_client()
+
+    response = client.get("/api/collector/latest")
+
+    assert response.status_code == 200
+    assert response.get_json() == latest_data
+
+
+def test_device_control_action_routes_xj_start_charging_through_connector_semantics(monkeypatch):
+    class _FailOnInitProtocol:
+        def __init__(self, config):
+            raise AssertionError("dashboard should not instantiate ModbusProtocol directly")
+
+    monkeypatch.setattr("edgefusion.monitor.dashboard.ModbusProtocol", _FailOnInitProtocol)
+
+    device_manager = RecordingDeviceManager()
+    assert device_manager.register_device(
+        {
+            "device_id": "charger-xj",
+            "type": "charging_station",
+            "model": "xj_dc_120kw",
+            "protocol": "modbus",
+            "host": "127.0.0.1",
+            "port": 1502,
+            "unit_id": 7,
+        }
+    ) is True
+
+    dashboard = build_dashboard(device_manager)
+    client = dashboard.app.test_client()
+
+    response = client.post(
+        "/api/devices/charger-xj/control",
+        json={"action": "start_charging", "gun_id": 2, "params": {"power_kw": 7.2}},
+    )
+
+    assert response.status_code == 200
+    assert response.get_json()["success"] is True
+    assert device_manager.write_calls == [
+        (build_connector_device_id("charger-xj", 2), "power_limit", 7200),
+    ]
+
+
+def test_device_control_action_routes_generic_stop_to_semantic_command(monkeypatch):
+    class _FailOnInitProtocol:
+        def __init__(self, config):
+            raise AssertionError("dashboard should not instantiate ModbusProtocol directly")
+
+    monkeypatch.setattr("edgefusion.monitor.dashboard.ModbusProtocol", _FailOnInitProtocol)
+
+    device_manager = RecordingDeviceManager()
+    assert device_manager.register_device(
+        {
+            "device_id": "charger-generic",
+            "type": "charging_station",
+            "model": "generic_charger",
+            "protocol": "modbus",
+            "host": "127.0.0.1",
+            "port": 1502,
+            "unit_id": 3,
+        }
+    ) is True
+
+    dashboard = build_dashboard(device_manager)
+    client = dashboard.app.test_client()
+
+    response = client.post(
+        "/api/devices/charger-generic/control",
+        json={"action": "stop_charging", "gun_id": 1},
+    )
+
+    assert response.status_code == 200
+    assert response.get_json()["success"] is True
+    assert device_manager.write_calls == [
+        (build_connector_device_id("charger-generic", 1), "stop_charging", 1),
+    ]
+
+
+def test_device_control_action_rejects_set_soc_without_semantic_mapping(monkeypatch):
+    class _FailOnInitProtocol:
+        def __init__(self, config):
+            raise AssertionError("dashboard should not instantiate ModbusProtocol directly")
+
+    monkeypatch.setattr("edgefusion.monitor.dashboard.ModbusProtocol", _FailOnInitProtocol)
+
+    device_manager = RecordingDeviceManager()
+    assert device_manager.register_device(
+        {
+            "device_id": "charger-xj",
+            "type": "charging_station",
+            "model": "xj_dc_120kw",
+            "protocol": "modbus",
+            "host": "127.0.0.1",
+            "port": 1502,
+            "unit_id": 7,
+        }
+    ) is True
+
+    dashboard = build_dashboard(device_manager)
+    client = dashboard.app.test_client()
+
+    response = client.post(
+        "/api/devices/charger-xj/control",
+        json={"action": "set_soc", "gun_id": 1, "params": {"target_soc": 80}},
+    )
+
+    assert response.status_code == 400
+    assert response.get_json()["success"] is False
+    assert "不支持" in response.get_json()["message"]
+    assert device_manager.write_calls == []
+
+
+def test_gun_data_endpoint_reads_connector_semantics_without_direct_modbus(monkeypatch):
+    class _FailOnInitProtocol:
+        def __init__(self, config):
+            raise AssertionError("dashboard should not instantiate ModbusProtocol directly")
+
+    monkeypatch.setattr("edgefusion.monitor.dashboard.ModbusProtocol", _FailOnInitProtocol)
+
+    device_manager = RecordingDeviceManager()
+    assert device_manager.register_device(
+        {
+            "device_id": "charger-xj",
+            "type": "charging_station",
+            "model": "xj_dc_120kw",
+            "protocol": "modbus",
+            "host": "127.0.0.1",
+            "port": 1502,
+            "unit_id": 7,
+        }
+    ) is True
+    connector_device_id = build_connector_device_id("charger-xj", 2)
+    device_manager.read_values[(connector_device_id, "state")] = 3
+    device_manager.read_values[(connector_device_id, "power")] = 7200
+    device_manager.read_values[(connector_device_id, "energy")] = 12.5
+
+    dashboard = build_dashboard(device_manager)
+    client = dashboard.app.test_client()
+
+    response = client.get("/api/devices/charger-xj/gun-data?gun_id=2")
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["success"] is True
+    assert payload["data"]["gun_id"] == 2
+    assert payload["data"]["model"] == "xj_dc_120kw"
+    assert payload["data"]["state"]["value"] == 3
+    assert payload["data"]["power"]["value"] == 7200
+    assert payload["data"]["energy"]["value"] == 12.5
+    assert (connector_device_id, "state") in device_manager.read_calls
+    assert (connector_device_id, "power") in device_manager.read_calls
 
 
 def test_disconnect_active_device_keeps_candidate_available_for_reconnect():

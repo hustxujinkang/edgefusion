@@ -131,8 +131,37 @@ class ModbusProtocol(ProtocolBase):
         except Exception as e:
             self.logger.error("写寄存器异常: %s", e)
             return False
+
+    def _resolve_register_address(self, register: Any) -> int:
+        if isinstance(register, dict):
+            for key in ("register", "address", "addr"):
+                if key in register:
+                    return int(register[key])
+            raise ValueError(f"无效寄存器定义: {register}")
+        return int(register)
+
+    def _build_command_values(self, register: Dict[str, Any], value: Any) -> list[int]:
+        builder = register.get("builder")
+        if builder == "xj_power_absolute":
+            connector_id = int(register.get("connector_id", 1))
+            control_type = int(register.get("control_type", 0x02))
+            param = int(register.get("fixed_value", value))
+            register_count = max(4, int(register.get("register_count", 12)))
+            values = [
+                connector_id,
+                control_type,
+                param & 0xFFFF,
+                (param >> 16) & 0xFFFF,
+            ]
+            return values + [0] * max(0, register_count - len(values))
+
+        raw_values = register.get("values")
+        if isinstance(raw_values, list):
+            return [int(item) for item in raw_values]
+
+        return [int(value)]
     
-    def write_data(self, device_id: str, register: str, value: Any) -> bool:
+    def write_data(self, device_id: str, register: Any, value: Any) -> bool:
         """写入Modbus设备数据
         
         Args:
@@ -148,14 +177,19 @@ class ModbusProtocol(ProtocolBase):
         
         try:
             slave_id = int(device_id)
-            reg_addr = int(register)
-            reg_value = int(value)
-            
+            if isinstance(register, dict) and register.get("cmd") == "write_registers":
+                reg_addr = self._resolve_register_address(register)
+                values = self._build_command_values(register, value)
+                return self._write_registers(reg_addr, values, slave_id)
+
+            reg_addr = self._resolve_register_address(register)
+            reg_value = int(register.get("fixed_value", value)) if isinstance(register, dict) else int(value)
+
             response = self.client.write_register(reg_addr, reg_value, slave=slave_id)
-            
+
             if response.isError():
                 return False
-            
+
             return True
         except Exception as e:
             self.logger.error("Modbus写入失败: %s", e)

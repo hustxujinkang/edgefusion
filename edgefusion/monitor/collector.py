@@ -3,6 +3,7 @@ from typing import Dict, Any, List
 from datetime import datetime
 import threading
 import time
+from ..charger_layout import CHARGER_CONNECTOR_TYPE
 from ..device_manager import DeviceManager
 from ..config import Config
 from ..logger import get_logger
@@ -95,11 +96,13 @@ class DataCollector:
             elif device_type == 'energy_storage':
                 data = self._collect_storage_data(device_id, timestamp)
             elif device_type == 'charging_station':
-                data = self._collect_charger_data(device_id, timestamp)
+                data = self._collect_charger_data(device, timestamp)
             else:
                 data = self._collect_generic_data(device_id, timestamp)
-            
-            if data:
+
+            if isinstance(data, list):
+                collected_data.extend(item for item in data if item)
+            elif data:
                 collected_data.append(data)
         
         # 保存数据到缓冲区
@@ -236,7 +239,7 @@ class DataCollector:
                 }
             }
     
-    def _collect_charger_data(self, device_id: str, timestamp: datetime) -> Dict[str, Any]:
+    def _collect_charger_data(self, device: Dict[str, Any], timestamp: datetime) -> List[Dict[str, Any]]:
         """采集充电桩数据
         
         Args:
@@ -246,43 +249,56 @@ class DataCollector:
         Returns:
             Dict[str, Any]: 采集的数据
         """
-        try:
-            # 读取充电桩数据
-            status = self.device_manager.read_device_data(device_id, 'status') or 'Available'
-            power = self.device_manager.read_device_data(device_id, 'power') or 0
-            energy = self.device_manager.read_device_data(device_id, 'energy') or 0
-            voltage = self.device_manager.read_device_data(device_id, 'voltage') or 0
-            current = self.device_manager.read_device_data(device_id, 'current') or 0
-            
-            return {
-                'device_id': device_id,
-                'device_type': 'charging_station',
-                'timestamp': timestamp.isoformat(),
-                'data': {
-                    'status': status,
-                    'power': power,
-                    'energy': energy,
-                    'voltage': voltage,
-                    'current': current,
-                    'power_limit': self.device_manager.read_device_data(device_id, 'power_limit') or power,
-                    'max_power': self.device_manager.read_device_data(device_id, 'max_power') or power,
-                    'min_power': self.device_manager.read_device_data(device_id, 'min_power') or 0,
-                }
-            }
-        except Exception as e:
-            self.logger.warning("采集充电桩数据失败: %s", e)
-            return {
-                'device_id': device_id,
-                'device_type': 'charging_station',
-                'timestamp': timestamp.isoformat(),
-                'data': {
-                    'status': 'Error',
-                    'power': 0,
-                    'energy': 0,
-                    'voltage': 0,
-                    'current': 0
-                }
-            }
+        pile_id = device['device_id']
+        snapshots: List[Dict[str, Any]] = []
+        for connector in self.device_manager.get_device_connectors(pile_id):
+            connector_device_id = connector['device_id']
+            try:
+                status = self.device_manager.read_device_data(connector_device_id, 'status') or 'Available'
+                power = self.device_manager.read_device_data(connector_device_id, 'power') or 0
+                energy = self.device_manager.read_device_data(connector_device_id, 'energy') or 0
+                voltage = self.device_manager.read_device_data(connector_device_id, 'voltage') or 0
+                current = self.device_manager.read_device_data(connector_device_id, 'current') or 0
+
+                snapshots.append(
+                    {
+                        'device_id': connector_device_id,
+                        'device_type': CHARGER_CONNECTOR_TYPE,
+                        'pile_id': pile_id,
+                        'connector_id': connector['connector_id'],
+                        'timestamp': timestamp.isoformat(),
+                        'data': {
+                            'status': status,
+                            'power': power,
+                            'energy': energy,
+                            'voltage': voltage,
+                            'current': current,
+                            'power_limit': self.device_manager.read_device_data(connector_device_id, 'power_limit') or power,
+                            'max_power': self.device_manager.read_device_data(connector_device_id, 'max_power') or power,
+                            'min_power': self.device_manager.read_device_data(connector_device_id, 'min_power') or 0,
+                        }
+                    }
+                )
+            except Exception as e:
+                self.logger.warning("采集充电桩枪数据失败: %s", e)
+                snapshots.append(
+                    {
+                        'device_id': connector_device_id,
+                        'device_type': CHARGER_CONNECTOR_TYPE,
+                        'pile_id': pile_id,
+                        'connector_id': connector['connector_id'],
+                        'timestamp': timestamp.isoformat(),
+                        'data': {
+                            'status': 'Error',
+                            'power': 0,
+                            'energy': 0,
+                            'voltage': 0,
+                            'current': 0
+                        }
+                    }
+                )
+
+        return snapshots
     
     def _collect_generic_data(self, device_id: str, timestamp: datetime) -> Dict[str, Any]:
         """采集通用设备数据

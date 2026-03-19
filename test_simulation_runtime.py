@@ -71,6 +71,9 @@ def test_device_manager_keeps_simulation_devices_available_for_reconnect_after_a
         candidates = device_manager.get_device_candidates()
         candidate_ids = {device["device_id"] for device in candidates}
         assert {"grid_meter_0", "pv_0", "storage_0", "charger_0", "charger_1"} <= candidate_ids
+        charger_pile = device_manager.get_device_candidate("charger_0")
+        assert charger_pile["type"] == "charging_station"
+        assert charger_pile["connector_count"] == 1
 
         assert device_manager.activate_device("grid_meter_0") is True
         active_ids = {device["device_id"] for device in device_manager.get_devices()}
@@ -118,12 +121,16 @@ def test_data_collector_captures_grid_meter_and_control_capability_fields_from_s
         device_manager.stop()
 
     by_type = {item["device_type"]: item for item in collected}
+    connector_snapshot = next(item for item in collected if item["device_type"] == "charging_connector")
 
     assert by_type["grid_meter"]["data"]["power"] == -1000
     assert by_type["pv"]["data"]["power_limit"] == 7000
     assert by_type["energy_storage"]["data"]["max_charge_power"] == 1000
-    assert by_type["charging_station"]["data"]["max_power"] == 5000
-    assert by_type["charging_station"]["data"]["min_power"] == 1000
+    assert connector_snapshot["device_id"] == "charger_0:1"
+    assert connector_snapshot["pile_id"] == "charger_0"
+    assert connector_snapshot["connector_id"] == 1
+    assert connector_snapshot["data"]["max_power"] == 5000
+    assert connector_snapshot["data"]["min_power"] == 1000
 
 
 def test_mode_controller_reduces_export_against_live_simulation():

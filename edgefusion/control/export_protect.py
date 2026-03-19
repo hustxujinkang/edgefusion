@@ -21,6 +21,13 @@ class ExecutionPlan:
 
 
 def _snapshot_data(state: SiteState, device_type: str) -> list[dict[str, Any]]:
+    if isinstance(device_type, tuple):
+        valid_types = set(device_type)
+        return [
+            snapshot
+            for snapshot in state.snapshots.values()
+            if snapshot.get("device_type") in valid_types
+        ]
     return [
         snapshot
         for snapshot in state.snapshots.values()
@@ -107,7 +114,7 @@ def plan_export_protect(state: SiteState, config: dict[str, Any] | None = None) 
 
     charger_headroom_by_device: dict[str, int] = {}
     charger_current_power_by_device: dict[str, int] = {}
-    for snapshot in _snapshot_data(state, "charging_station"):
+    for snapshot in _snapshot_data(state, ("charging_connector", "charging_station")):
         if not _is_online(snapshot):
             continue
 

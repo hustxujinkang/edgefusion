@@ -15,9 +15,6 @@
 │   ├── config.py            # 配置管理
 │   ├── device_manager.py    # 设备管理模块
 │   ├── point_tables.py      # 型号点表定义
-│   ├── devices/
-│   │   ├── __init__.py
-│   │   └── charger_controller.py  # 充电桩控制器
 │   ├── protocol/            # 协议支持模块
 │   │   ├── __init__.py
 │   │   ├── base.py          # 协议基类
@@ -54,7 +51,6 @@
 | 配置管理 | 系统配置加载和管理 | edgefusion/config.py |
 | 设备管理 | 设备注册、发现和管理 | edgefusion/device_manager.py |
 | 点表定义 | 各型号设备的寄存器映射 | edgefusion/point_tables.py |
-| 设备控制器 | 设备特定控制逻辑 | edgefusion/devices/ |
 | 协议支持 | 各类设备协议的实现 | edgefusion/protocol/ |
 | 控制策略 | 协同控制策略的实现 | edgefusion/strategy/ |
 | 监控系统 | 数据采集、存储和展示 | edgefusion/monitor/ |
@@ -104,22 +100,15 @@ POINT_TABLES = {
 - 缩放因子和偏移量
 - 单位标注
 
-### 4.2 设备控制器
+### 4.2 统一控制映射
 
-`ChargerController` 类提供设备特定的控制逻辑抽象：
+系统通过 `point_tables.py` 将不同型号设备展开为统一的语义采集点和控制命令，再由 `DeviceManager` 和协议层执行真实读写。
 
-```python
-class ChargerController:
-    def start_charging(self, gun_id, power_kw=None)
-    def stop_charging(self, gun_id)
-    def set_power_limit(self, gun_id, power_kw)
-    def emergency_stop(self, gun_id)
-```
-
-控制器根据设备型号自动选择正确的：
-- 寄存器地址
-- 数据格式
-- 命令协议
+统一控制链路的特点：
+- 业务层和监控面板都只使用语义字段和语义命令
+- 点表负责把型号差异翻译成 `telemetry_map` / `control_map`
+- 协议层负责把单寄存器写和复杂控制报文落到真实设备
+- 充电桩按“桩接入、枪控制”建模，策略控制和人工控制共用同一条下发链路
 
 ### 4.3 设备管理
 
@@ -165,7 +154,7 @@ class ChargerController:
 
 ### 6.2 渐进功率调节
 
-模拟器和控制器都实现了渐进功率调节：
+模拟器和统一控制链路都围绕渐进功率调节设计：
 - **原因**：保护电池和电网，模拟真实设备行为
 - **速率**：3kW/s 的调节速率
 

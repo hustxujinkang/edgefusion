@@ -242,7 +242,7 @@ python modbus_charger_simulator.py --port 5020 --model xj_dc_120kw
 | `/api/devices/<id>` | DELETE | 删除设备 |
 | `/api/devices/<id>/connect` | POST | 连接设备 |
 | `/api/devices/<id>/disconnect` | POST | 断开设备 |
-| `/api/devices/<id>/gun-data` | GET | 获取充电枪数据 |
+| `/api/devices/<id>/gun-data` | GET | 通过统一语义映射获取充电枪数据 |
 
 ### 控制 API
 
@@ -268,6 +268,11 @@ python modbus_charger_simulator.py --port 5020 --model xj_dc_120kw
 - `stop_charging` - 停止充电
 - `set_power` - 设置功率限制（需 `power_kw` 参数）
 - `emergency_stop` - 急停
+- `clear_fault` - 清故障
+
+说明：
+- `start_charging` / `set_power` 的 `power_kw` 会在后台统一换算到 W，再按设备型号映射到真实控制命令
+- `set_soc` 当前未开放统一语义控制，不属于支持动作
 
 ### 寄存器操作 API
 

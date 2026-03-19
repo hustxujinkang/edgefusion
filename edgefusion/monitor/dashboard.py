@@ -5,12 +5,12 @@ import threading
 import time
 import os
 from ..device_manager import DeviceManager
+from ..charger_layout import build_connector_device_id
 from ..strategy import StrategyBase
 from ..logger import get_logger
 from .collector import DataCollector
 from .database import Database
 from ..protocol import ModbusProtocol, SimulationProtocol
-from ..point_tables import get_gun_registers, get_point_table
 
 
 class Dashboard:
@@ -346,57 +346,27 @@ class Dashboard:
                 if not device_info:
                     return jsonify({'success': False, 'message': '设备不存在或不支持该接口'})
                 model = device_info.get('model', 'generic_charger')
-                
-                # 获取该型号的点表配置
-                gun_regs = get_gun_registers(model, gun_id)
-                if not gun_regs:
+                connector_device_id = build_connector_device_id(device_info['device_id'], gun_id)
+                connector_info = self.device_manager.get_device(connector_device_id)
+                if not connector_info:
                     return jsonify({'success': False, 'message': f'型号 {model} 不支持枪{gun_id}'})
-                
-                # 连接设备
-                config = {
-                    'host': device_info['host'],
-                    'port': device_info['port'],
-                    'timeout': 5
-                }
-                protocol = ModbusProtocol(config)
-                if not protocol.connect():
-                    return jsonify({'success': False, 'message': '设备连接失败'})
-                
-                # 按点表读取所有寄存器
+
+                telemetry_map = connector_info.get('telemetry_map', {})
+                if not isinstance(telemetry_map, dict) or not telemetry_map:
+                    return jsonify({'success': False, 'message': f'型号 {model} 未配置枪{gun_id}采集点表'})
+
                 result = {'gun_id': gun_id, 'model': model}
-                for name, cfg in gun_regs.items():
+                for name, cfg in telemetry_map.items():
                     try:
-                        addr = cfg['addr']
-                        reg_type = cfg.get('type', 'u16')
-                        scale = cfg.get('scale', 1)
-                        unit = cfg.get('unit', '')
-                        
-                        # 计算读取数量（u32读2个寄存器，u16读1个）
-                        count = 2 if reg_type == 'u32' else 1
-                        
-                        # 读取寄存器（传入正确的 slave_id）
-                        values = protocol._read_registers(addr, count, slave_id=device_info['unit_id'])
-                        if values:
-                            if reg_type == 'u32':
-                                # 合并两个16位寄存器为32位
-                                raw_value = (values[1] << 16) | values[0]
-                            else:
-                                raw_value = values[0]
-                            
-                            # 应用缩放因子
-                            scaled_value = raw_value * scale
-                            
-                            result[name] = {
-                                'value': round(scaled_value, 3),
-                                'unit': unit,
-                                'raw': raw_value
-                            }
-                        else:
-                            result[name] = {'value': None, 'error': '读取失败'}
+                        value = self.device_manager.read_device_data(connector_device_id, name)
+                        unit = cfg.get('unit', '') if isinstance(cfg, dict) else ''
+                        result[name] = {
+                            'value': value,
+                            'unit': unit,
+                        }
                     except Exception as e:
                         result[name] = {'value': None, 'error': str(e)}
-                
-                protocol.disconnect()
+
                 return jsonify({'success': True, 'data': result})
                 
             except Exception as e:
@@ -434,41 +404,40 @@ class Dashboard:
                 device_info = self._get_modbus_device_info(device_id)
                 if not device_info:
                     return jsonify({'success': False, 'message': '设备不存在或不支持该接口'})
-                
-                # 初始化Modbus连接
-                from ..devices.charger_controller import ChargerController
-                config = {
-                    'host': device_info['host'],
-                    'port': device_info['port'],
-                    'timeout': 5
-                }
-                protocol = ModbusProtocol(config)
-                
-                if not protocol.connect():
-                    return jsonify({'success': False, 'message': '设备连接失败'})
-                
-                controller = ChargerController(device_info, protocol)
-                
-                # 执行控制命令
-                result = False
+
+                target_device_id = device_info.get('device_id', device_id)
+                if device_info.get('type') == 'charging_station':
+                    target_device_id = build_connector_device_id(target_device_id, int(gun_id))
+
+                target_device = self.device_manager.get_device(target_device_id)
+                if not target_device:
+                    return jsonify({'success': False, 'message': '充电枪不存在或未接入'})
+
+                control_map = target_device.get('control_map', {}) if isinstance(target_device, dict) else {}
+                register = None
+                value: Any = 1
                 if action == 'start_charging':
-                    result = controller.start_charging(gun_id)
+                    power_w = int(float(params.get('power_kw', 120)) * 1000)
+                    if isinstance(control_map, dict) and 'power_limit' in control_map:
+                        register = 'power_limit'
+                        value = power_w
+                    else:
+                        register = 'start_charging'
                 elif action == 'stop_charging':
-                    result = controller.stop_charging(gun_id)
+                    register = 'stop_charging'
                 elif action == 'set_power':
-                    power = params.get('power_kw', 120)
-                    result = controller.set_power_limit(gun_id, power)
+                    register = 'power_limit'
+                    value = int(float(params.get('power_kw', 120)) * 1000)
                 elif action == 'set_soc':
-                    soc = params.get('target_soc', 100)
-                    result = controller.set_target_soc(gun_id, soc)
+                    return jsonify({'success': False, 'message': '当前不支持目标SOC控制'}), 400
                 elif action == 'emergency_stop':
-                    result = controller.emergency_stop(gun_id)
+                    register = 'emergency_stop'
                 elif action == 'clear_fault':
-                    result = controller.clear_fault(gun_id)
+                    register = 'clear_fault'
                 else:
                     return jsonify({'success': False, 'message': f'未知操作: {action}'})
-                
-                protocol.disconnect()
+
+                result = self.device_manager.write_device_data(target_device_id, register, value)
                 
                 return jsonify({
                     'success': result,
