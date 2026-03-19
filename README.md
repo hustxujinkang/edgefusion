@@ -156,6 +156,7 @@ python quick_test.py
 - [DEPLOYMENT.md](DEPLOYMENT.md) - Linux 部署与 `systemd` 运维说明
 - [USAGE.md](USAGE.md) - 联调、模拟器、Web 界面和 API 使用说明
 - [ARCHITECTURE.md](ARCHITECTURE.md) - 系统架构和技术选型说明
+- [docs/device-models-and-adaptation.md](docs/device-models-and-adaptation.md) - 光、储、充、总表当前统一模型与现场接入适配说明
 
 ## 项目结构
 
