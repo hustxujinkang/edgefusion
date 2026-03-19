@@ -9,7 +9,7 @@ from ..strategy import StrategyBase
 from ..logger import get_logger
 from .collector import DataCollector
 from .database import Database
-from ..protocol import ModbusProtocol
+from ..protocol import ModbusProtocol, SimulationProtocol
 from ..point_tables import get_gun_registers, get_point_table
 
 
@@ -30,7 +30,6 @@ class Dashboard:
         self.data_collector = data_collector
         self.database = database
         self.strategies: Dict[str, StrategyBase] = {}
-        self.connected_devices: Dict[str, Any] = {}
         self.logger = get_logger('Dashboard')
         
         # 显式配置模板和静态资源目录，避免前端依赖外网 CDN
@@ -53,11 +52,44 @@ class Dashboard:
         @self.app.route('/api/status', methods=['GET'])
         def get_status():
             return jsonify(self.get_system_status())
+
+        # 模式摘要
+        @self.app.route('/api/modes/summary', methods=['GET'])
+        def get_modes_summary():
+            return jsonify(self._get_mode_summary())
+
+        # 模式配置
+        @self.app.route('/api/modes/config', methods=['GET'])
+        def get_modes_config():
+            return jsonify(self._get_mode_config())
+
+        @self.app.route('/api/modes/config', methods=['POST'])
+        def update_modes_config():
+            data = request.get_json() or {}
+            updated = self._set_mode_config(data)
+            return jsonify({'success': True, **updated})
+
+        # 控制设置
+        @self.app.route('/api/control/settings', methods=['GET'])
+        def get_control_settings():
+            return jsonify(self._get_control_settings())
+
+        @self.app.route('/api/control/settings', methods=['POST'])
+        def update_control_settings():
+            data = request.get_json() or {}
+            use_simulated_devices = bool(data.get('use_simulated_devices', True))
+            settings = self._set_control_settings(use_simulated_devices)
+            return jsonify({'success': True, **settings})
         
         # 设备列表
         @self.app.route('/api/devices', methods=['GET'])
         def get_devices():
             return jsonify(self.device_manager.get_devices())
+
+        # 候选设备列表
+        @self.app.route('/api/devices/candidates', methods=['GET'])
+        def get_device_candidates():
+            return jsonify(self._get_candidate_device_inventory())
         
         # 设备详情
         @self.app.route('/api/devices/<device_id>', methods=['GET'])
@@ -100,11 +132,62 @@ class Dashboard:
         @self.app.route('/api/collector', methods=['GET'])
         def get_collector_status():
             return jsonify(self.data_collector.get_data_summary())
+
+        # 最新采集快照
+        @self.app.route('/api/collector/latest', methods=['GET'])
+        def get_collector_latest():
+            device_id = request.args.get('device_id')
+            return jsonify(self.data_collector.get_latest_data(device_id))
         
         # 数据库统计
         @self.app.route('/api/database', methods=['GET'])
         def get_database_stats():
             return jsonify(self.database.get_device_stats())
+
+        # 仿真场景列表
+        @self.app.route('/api/simulation/scenarios', methods=['GET'])
+        def get_simulation_scenarios():
+            protocol = self._get_simulation_protocol()
+            if not protocol:
+                return jsonify({
+                    'enabled': False,
+                    'current': None,
+                    'scenarios': []
+                })
+
+            return jsonify({
+                'enabled': True,
+                'current': protocol.get_current_scenario(),
+                'scenarios': protocol.list_scenarios()
+            })
+
+        # 切换仿真场景
+        @self.app.route('/api/simulation/scenario', methods=['POST'])
+        def switch_simulation_scenario():
+            protocol = self._get_simulation_protocol()
+            if not protocol:
+                return jsonify({'success': False, 'message': '仿真未启用'}), 400
+
+            data = request.get_json() or {}
+            scenario = data.get('scenario')
+            if not scenario:
+                return jsonify({'success': False, 'message': '场景不能为空'}), 400
+
+            if not protocol.switch_scenario(scenario):
+                return jsonify({'success': False, 'message': f'场景切换失败: {scenario}'}), 400
+
+            self.device_manager.refresh_protocol_candidates('simulation', clear_active=True)
+            simulation_candidates = [
+                device for device in self.device_manager.get_device_candidates()
+                if device.get('protocol') == 'simulation'
+            ]
+
+            return jsonify({
+                'success': True,
+                'current': protocol.get_current_scenario(),
+                'candidate_count': len(simulation_candidates),
+                'devices': simulation_candidates
+            })
         
         # ============ 新增：设备管理API ============
         
@@ -176,12 +259,14 @@ class Dashboard:
                     'unit_id': unit_id,
                     'status': 'online'
                 }
-                
-                self.connected_devices[device_id] = device_info
+
+                self._ensure_modbus_protocol(host, port)
+                if not self.device_manager.register_device_candidate(device_info):
+                    return jsonify({'success': False, 'message': '候选设备注册失败'})
                 
                 return jsonify({
                     'success': True, 
-                    'message': '设备添加成功',
+                    'message': '候选设备添加成功',
                     'device': device_info
                 })
             except Exception as e:
@@ -194,10 +279,9 @@ class Dashboard:
                 data = request.get_json()
                 register = data.get('register', '0')
                 
-                if device_id not in self.connected_devices:
-                    return jsonify({'success': False, 'message': '设备不存在'})
-                
-                device_info = self.connected_devices[device_id]
+                device_info = self._get_modbus_device_info(device_id)
+                if not device_info:
+                    return jsonify({'success': False, 'message': '设备不存在或不支持该接口'})
                 
                 config = {
                     'host': device_info['host'],
@@ -228,10 +312,9 @@ class Dashboard:
                 register = data.get('register', '0')
                 value = data.get('value', 0)
                 
-                if device_id not in self.connected_devices:
-                    return jsonify({'success': False, 'message': '设备不存在'})
-                
-                device_info = self.connected_devices[device_id]
+                device_info = self._get_modbus_device_info(device_id)
+                if not device_info:
+                    return jsonify({'success': False, 'message': '设备不存在或不支持该接口'})
                 
                 config = {
                     'host': device_info['host'],
@@ -259,10 +342,9 @@ class Dashboard:
             try:
                 gun_id = int(request.args.get('gun_id', 1))
                 
-                if device_id not in self.connected_devices:
-                    return jsonify({'success': False, 'message': '设备不存在'})
-                
-                device_info = self.connected_devices[device_id]
+                device_info = self._get_modbus_device_info(device_id)
+                if not device_info:
+                    return jsonify({'success': False, 'message': '设备不存在或不支持该接口'})
                 model = device_info.get('model', 'generic_charger')
                 
                 # 获取该型号的点表配置
@@ -323,7 +405,21 @@ class Dashboard:
         # 获取已连接设备列表
         @self.app.route('/api/devices/connected', methods=['GET'])
         def get_connected_devices():
-            return jsonify(list(self.connected_devices.values()))
+            return jsonify(self.device_manager.get_devices())
+
+        @self.app.route('/api/devices/candidates/<device_id>/activate', methods=['POST'])
+        def activate_candidate_device(device_id):
+            if self.device_manager.activate_device(device_id):
+                return jsonify({'success': True, 'message': '设备已接入'})
+            return jsonify({'success': False, 'message': '候选设备不存在或接入失败'}), 404
+
+        @self.app.route('/api/devices/candidates/<device_id>', methods=['DELETE'])
+        def delete_candidate_device(device_id):
+            if self.device_manager.is_device_connected(device_id):
+                return jsonify({'success': False, 'message': '设备已接入，请先断开'}), 409
+            if self.device_manager.unregister_device_candidate(device_id):
+                return jsonify({'success': True, 'message': '候选设备已删除'})
+            return jsonify({'success': False, 'message': '候选设备不存在'}), 404
         
         # 【新增】设备控制API
         @self.app.route('/api/devices/<device_id>/control', methods=['POST'])
@@ -335,10 +431,9 @@ class Dashboard:
                 gun_id = data.get('gun_id', 1)
                 params = data.get('params', {})
                 
-                if device_id not in self.connected_devices:
-                    return jsonify({'success': False, 'message': '设备不存在'})
-                
-                device_info = self.connected_devices[device_id]
+                device_info = self._get_modbus_device_info(device_id)
+                if not device_info:
+                    return jsonify({'success': False, 'message': '设备不存在或不支持该接口'})
                 
                 # 初始化Modbus连接
                 from ..devices.charger_controller import ChargerController
@@ -386,9 +481,8 @@ class Dashboard:
         # 删除设备
         @self.app.route('/api/devices/<device_id>', methods=['DELETE'])
         def delete_device(device_id):
-            if device_id in self.connected_devices:
-                del self.connected_devices[device_id]
-                return jsonify({'success': True, 'message': '设备已删除'})
+            if self.device_manager.unregister_device(device_id):
+                return jsonify({'success': True, 'message': '设备已断开'})
             return jsonify({'success': False, 'message': '设备不存在'})
         
         # 主页 - 使用外部模板文件
@@ -459,6 +553,262 @@ class Dashboard:
             'device_count': device_count,
             'online_devices': online_devices
         }
+
+    def _ensure_modbus_protocol(self, host: str, port: int):
+        """确保设备管理器中存在Modbus协议占位实例。"""
+        if 'modbus' in self.device_manager.protocols:
+            protocol = self.device_manager.protocols['modbus']
+            if not protocol.is_connected:
+                protocol.connect()
+            return
+
+        protocol = ModbusProtocol({
+            'host': host,
+            'port': port,
+            'timeout': 5
+        })
+        protocol.connect()
+        self.device_manager.protocols['modbus'] = protocol
+
+    def _get_modbus_device_info(self, device_id: str) -> Optional[Dict[str, Any]]:
+        """获取支持Dashboard直连接口的Modbus设备信息。"""
+        device_info = self.device_manager.get_device(device_id)
+        if not device_info:
+            return None
+
+        required_fields = ('host', 'port', 'unit_id')
+        if device_info.get('protocol') != 'modbus':
+            return None
+        if any(field not in device_info for field in required_fields):
+            return None
+
+        return device_info
+
+    def _get_candidate_device_inventory(self) -> List[Dict[str, Any]]:
+        inventory: List[Dict[str, Any]] = []
+        for device in self.device_manager.get_device_candidates():
+            item = dict(device)
+            item['connected'] = self.device_manager.is_device_connected(item.get('device_id', ''))
+            inventory.append(item)
+        return inventory
+
+    def _get_simulation_protocol(self) -> Optional[SimulationProtocol]:
+        protocol = self.device_manager.protocols.get('simulation')
+        if isinstance(protocol, SimulationProtocol) and protocol.is_connected:
+            return protocol
+        return None
+
+    def _get_mode_controller(self) -> Optional[StrategyBase]:
+        strategy = self.strategies.get('mode_controller')
+        if strategy:
+            return strategy
+
+        for strategy in self.strategies.values():
+            if hasattr(strategy, 'get_mode_summary') and hasattr(strategy, 'get_mode_config'):
+                return strategy
+        return None
+
+    def _build_fallback_mode_config(self) -> Dict[str, Any]:
+        config = getattr(self.data_collector, 'config', None)
+        use_simulated_devices = True
+        state_config = {'max_data_age_seconds': 30, 'manual_override': False}
+        export_settings = {
+            'export_limit_w': 5000,
+            'export_enter_ratio': 1.0,
+            'storage_soc_soft_limit': 95,
+        }
+        export_enabled = True
+
+        if config and hasattr(config, 'get'):
+            use_simulated_devices = bool(config.get('control.use_simulated_devices', True))
+            state_config['max_data_age_seconds'] = int(config.get('control.mode_controller.state.max_data_age_seconds', 30))
+            state_config['manual_override'] = bool(config.get('control.mode_controller.state.manual_override', False))
+            export_enabled = bool(config.get('control.mode_controller.mode.export_protect_enabled', True))
+            export_settings['export_limit_w'] = int(config.get('control.mode_controller.mode.export_limit_w', 5000))
+            export_settings['export_enter_ratio'] = float(config.get('control.mode_controller.mode.export_enter_ratio', 1.0))
+            export_settings['storage_soc_soft_limit'] = float(config.get('control.mode_controller.mode.storage_soc_soft_limit', 95))
+
+        return {
+            'use_simulated_devices': use_simulated_devices,
+            'state': state_config,
+            'modes': {
+                'manual_override': {
+                    'name': 'manual_override',
+                    'label': '人工接管',
+                    'description': '人工接管时暂停自动模式控制。',
+                    'enabled': True,
+                    'configurable': True,
+                    'toggleable': False,
+                    'settings': {
+                        'active': bool(state_config['manual_override']),
+                    },
+                    'fields': [
+                        {
+                            'key': 'active',
+                            'label': '手动接管激活',
+                            'type': 'boolean',
+                            'description': '开启后系统强制进入人工接管模式。',
+                        }
+                    ],
+                },
+                'safe_hold': {
+                    'name': 'safe_hold',
+                    'label': '保守运行',
+                    'description': '关键测量缺失或不可信时，系统只保留监控和保守动作。',
+                    'enabled': True,
+                    'configurable': True,
+                    'toggleable': False,
+                    'settings': {
+                        'max_data_age_seconds': int(state_config['max_data_age_seconds']),
+                    },
+                    'fields': [
+                        {
+                            'key': 'max_data_age_seconds',
+                            'label': '最大数据时效（秒）',
+                            'type': 'number',
+                            'min': 1,
+                            'step': 1,
+                            'description': '超过该时效的关键测量会触发保守运行。',
+                        }
+                    ],
+                },
+                'business_normal': {
+                    'name': 'business_normal',
+                    'label': '正常运行',
+                    'description': '默认模式，系统保持监控和轻量运行。',
+                    'enabled': True,
+                    'configurable': False,
+                    'toggleable': False,
+                    'settings': {},
+                    'fields': [],
+                },
+                'export_protect': {
+                    'name': 'export_protect',
+                    'label': '反送保护',
+                    'description': '反送功率超限时，优先用储能、充电负荷和光伏限发消纳光伏。',
+                    'enabled': export_enabled,
+                    'configurable': True,
+                    'settings': export_settings,
+                    'toggleable': True,
+                    'fields': [
+                        {
+                            'key': 'export_limit_w',
+                            'label': '反送上限（W）',
+                            'type': 'number',
+                            'min': 0,
+                            'step': 100,
+                        },
+                        {
+                            'key': 'export_enter_ratio',
+                            'label': '进入比例',
+                            'type': 'number',
+                            'min': 0,
+                            'step': 0.05,
+                        },
+                        {
+                            'key': 'storage_soc_soft_limit',
+                            'label': '储能 SOC 软上限',
+                            'type': 'number',
+                            'min': 0,
+                            'max': 100,
+                            'step': 1,
+                        },
+                    ],
+                },
+            },
+        }
+
+    def _get_mode_summary(self) -> Dict[str, Any]:
+        controller = self._get_mode_controller()
+        if controller and hasattr(controller, 'get_mode_summary'):
+            return controller.get_mode_summary()
+
+        devices = self.device_manager.get_devices()
+        return {
+            'current_mode': 'business_normal',
+            'current_mode_label': '正常运行',
+            'current_reason': 'mode_controller_unavailable',
+            'control_state': 'monitor_only',
+            'supported_modes': [],
+            'key_measurements': {
+                'timestamp': None,
+                'grid_power_w': None,
+                'pv_power_w': 0,
+            },
+            'trust': {
+                'trusted': False,
+                'issues': ['mode_controller_unavailable'],
+            },
+            'blockers': ['mode_controller_unavailable'],
+            'counts': {
+                'active_devices': len(devices),
+                'online_devices': sum(1 for d in devices if d.get('status') == 'online'),
+                'participating_devices': 0,
+            },
+            'participating_devices': [],
+            'recent_actions': [],
+            'use_simulated_devices': self._get_control_settings()['use_simulated_devices'],
+        }
+
+    def _get_mode_config(self) -> Dict[str, Any]:
+        controller = self._get_mode_controller()
+        if controller and hasattr(controller, 'get_mode_config'):
+            return controller.get_mode_config()
+        return self._build_fallback_mode_config()
+
+    def _set_mode_config(self, updates: Dict[str, Any]) -> Dict[str, Any]:
+        controller = self._get_mode_controller()
+        if controller and hasattr(controller, 'update_mode_config'):
+            mode_config = controller.update_mode_config(updates)
+        else:
+            mode_config = self._build_fallback_mode_config()
+            if 'use_simulated_devices' in updates:
+                mode_config['use_simulated_devices'] = bool(updates['use_simulated_devices'])
+
+        config = getattr(self.data_collector, 'config', None)
+        if config and hasattr(config, 'set'):
+            config.set('control.use_simulated_devices', mode_config['use_simulated_devices'])
+            config.set(
+                'control.mode_controller.state.max_data_age_seconds',
+                int(mode_config['state']['max_data_age_seconds']),
+            )
+            config.set(
+                'control.mode_controller.state.manual_override',
+                bool(mode_config['state'].get('manual_override', False)),
+            )
+            export_protect = mode_config['modes']['export_protect']
+            config.set(
+                'control.mode_controller.mode.export_protect_enabled',
+                bool(export_protect['enabled']),
+            )
+            config.set(
+                'control.mode_controller.mode.export_limit_w',
+                int(export_protect['settings']['export_limit_w']),
+            )
+            config.set(
+                'control.mode_controller.mode.export_enter_ratio',
+                float(export_protect['settings']['export_enter_ratio']),
+            )
+            config.set(
+                'control.mode_controller.mode.storage_soc_soft_limit',
+                float(export_protect['settings']['storage_soc_soft_limit']),
+            )
+
+        for strategy in self.strategies.values():
+            if hasattr(strategy, 'use_simulated_devices'):
+                strategy.use_simulated_devices = bool(mode_config['use_simulated_devices'])
+            if hasattr(strategy, 'config') and isinstance(strategy.config, dict):
+                strategy.config['use_simulated_devices'] = bool(mode_config['use_simulated_devices'])
+
+        return mode_config
+
+    def _get_control_settings(self) -> Dict[str, Any]:
+        mode_config = self._get_mode_config()
+        return {'use_simulated_devices': bool(mode_config.get('use_simulated_devices', True))}
+
+    def _set_control_settings(self, use_simulated_devices: bool) -> Dict[str, Any]:
+        mode_config = self._set_mode_config({'use_simulated_devices': use_simulated_devices})
+        return {'use_simulated_devices': bool(mode_config.get('use_simulated_devices', True))}
     
     def get_strategies_status(self) -> List[Dict[str, Any]]:
         """获取策略状态

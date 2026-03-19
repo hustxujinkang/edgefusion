@@ -1,6 +1,7 @@
 # 配置管理模块
 import yaml
 import os
+from copy import deepcopy
 from typing import Dict, Any
 from .logger import get_logger
 from .runtime_paths import get_config_file
@@ -25,12 +26,16 @@ class Config:
     def _load_config(self):
         """加载配置文件"""
         try:
+            default_config = self._get_default_config()
             if os.path.exists(self.config_file):
                 with open(self.config_file, 'r', encoding='utf-8') as f:
-                    self.config = yaml.safe_load(f)
+                    loaded_config = yaml.safe_load(f) or {}
+                self.config = self._deep_merge(default_config, loaded_config)
+                if self.config != loaded_config:
+                    self.save_config()
             else:
                 # 使用默认配置
-                self._load_default_config()
+                self.config = default_config
                 # 保存默认配置到文件
                 self.save_config()
         except Exception as e:
@@ -39,7 +44,10 @@ class Config:
     
     def _load_default_config(self):
         """加载默认配置"""
-        self.config = {
+        self.config = self._get_default_config()
+
+    def _get_default_config(self) -> Dict[str, Any]:
+        return {
             'device_manager': {
                 'modbus': {
                     'host': 'localhost',
@@ -79,6 +87,26 @@ class Config:
                     'grid_import_limit': 5000
                 }
             },
+            'control': {
+                'use_simulated_devices': True,
+                'mode_controller': {
+                    'state': {
+                        'max_data_age_seconds': 30,
+                        'manual_override': False,
+                    },
+                    'mode': {
+                        'export_protect_enabled': True,
+                        'export_limit_w': 5000,
+                        'export_enter_ratio': 1.0,
+                        'storage_soc_soft_limit': 95
+                    }
+                }
+            },
+            'simulation': {
+                'enabled': False,
+                'tick_seconds': 1.0,
+                'scenario': 'sunny_midday'
+            },
             'monitor': {
                 'collect_interval': 10,
                 'database_url': 'sqlite:///edgefusion.db',
@@ -86,6 +114,15 @@ class Config:
                 'dashboard_host': '0.0.0.0'
             }
         }
+
+    def _deep_merge(self, base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any]:
+        merged = deepcopy(base)
+        for key, value in override.items():
+            if isinstance(value, dict) and isinstance(merged.get(key), dict):
+                merged[key] = self._deep_merge(merged[key], value)
+            else:
+                merged[key] = deepcopy(value)
+        return merged
     
     def save_config(self):
         """保存配置到文件"""

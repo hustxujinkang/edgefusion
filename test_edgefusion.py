@@ -2,6 +2,7 @@
 # 测试脚本
 import sys
 import os
+import copy
 
 # 添加项目根目录到Python路径
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -9,7 +10,9 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from edgefusion.config import Config
 from edgefusion.device_manager import DeviceManager
 from edgefusion.strategy import PeakShavingStrategy, DemandResponseStrategy, SelfConsumptionStrategy
+from edgefusion.strategy.mode_controller import ModeControllerStrategy
 from edgefusion.monitor import DataCollector, Database, Dashboard
+from edgefusion.main import EdgeFusion
 
 
 def test_config():
@@ -162,6 +165,66 @@ def test_monitor():
     except Exception as e:
         print(f"监控模块测试失败: {e}")
         return False
+
+
+def test_edgefusion_initializes_single_mode_controller_strategy():
+    app = EdgeFusion()
+
+    assert list(app.strategies.keys()) == ["mode_controller"]
+    assert isinstance(app.strategies["mode_controller"], ModeControllerStrategy)
+
+
+def test_edgefusion_wires_simulation_protocol_when_enabled(monkeypatch):
+    base_config = copy.deepcopy(Config().get_all())
+    base_config["device_manager"] = {}
+    simulation_config = base_config.setdefault("simulation", {})
+    simulation_config["enabled"] = True
+    simulation_config["tick_seconds"] = 0.1
+    simulation_config["scenario"] = "sunny_midday"
+    simulation_config["base_load_w"] = 2000
+    simulation_config.setdefault("pv", {})
+    simulation_config["pv"]["count"] = 1
+    simulation_config["pv"]["available_power_w"] = 7000
+    simulation_config["pv"]["power_limit_w"] = 7000
+    simulation_config.setdefault("storage", {})
+    simulation_config["storage"]["count"] = 1
+    simulation_config["storage"]["initial_mode"] = "charge"
+    simulation_config["storage"]["max_charge_power_w"] = 1000
+    simulation_config["storage"]["initial_charge_power_w"] = 1000
+    simulation_config.setdefault("chargers", {})
+    simulation_config["chargers"]["count"] = 1
+    simulation_config["chargers"]["session_active"] = True
+    simulation_config["chargers"]["power_w"] = 3000
+
+    class FakeConfig:
+        def __init__(self):
+            self.config = copy.deepcopy(base_config)
+
+        def get(self, key, default=None):
+            value = self.config
+            for part in key.split("."):
+                if isinstance(value, dict) and part in value:
+                    value = value[part]
+                else:
+                    return default
+            return value
+
+        def get_all(self):
+            return self.config
+
+    monkeypatch.setattr("edgefusion.main.Config", FakeConfig)
+
+    app = EdgeFusion()
+
+    try:
+        assert "simulation" in app.device_manager.protocols
+        app.device_manager.start()
+        device_ids = {device["device_id"] for device in app.device_manager.get_device_candidates()}
+        assert "grid_meter_0" in device_ids
+        assert "pv_0" in device_ids
+        assert app.device_manager.get_devices() == []
+    finally:
+        app.device_manager.stop()
 
 
 def main():

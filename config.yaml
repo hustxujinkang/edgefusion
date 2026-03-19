@@ -41,3 +41,18 @@ strategy:
     min_soc: 20
     pv_power_threshold: 1000
     soc_target: 80
+control:
+  use_simulated_devices: true
+  mode_controller:
+    mode:
+      export_protect_enabled: true
+      export_enter_ratio: 1.0
+      export_limit_w: 5000
+      storage_soc_soft_limit: 95
+    state:
+      manual_override: false
+      max_data_age_seconds: 30
+simulation:
+  enabled: true
+  scenario: sunny_midday
+  tick_seconds: 1.0

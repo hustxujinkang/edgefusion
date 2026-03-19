@@ -4,7 +4,7 @@ import signal
 import time
 from .config import Config
 from .device_manager import DeviceManager
-from .strategy import PeakShavingStrategy, DemandResponseStrategy, SelfConsumptionStrategy
+from .strategy import ModeControllerStrategy
 from .logger import get_logger
 
 # 尝试导入监控模块（兼容模式）
@@ -52,7 +52,11 @@ class EdgeFusion:
         self.logger.info("加载配置完成")
         
         # 初始化设备管理器
-        device_config = self.config.get('device_manager', {})
+        device_config = dict(self.config.get('device_manager', {}))
+        if self.config.get('simulation.enabled', False):
+            simulation_config = dict(self.config.get('simulation', {}))
+            simulation_config.pop('enabled', None)
+            device_config['simulation'] = simulation_config
         self.device_manager = DeviceManager(device_config)
         self.logger.info("初始化设备管理器完成")
         
@@ -96,17 +100,13 @@ class EdgeFusion:
     
     def _init_strategies(self):
         """初始化策略"""
-        # 初始化削峰填谷策略
-        peak_shaving_config = self.config.get('strategy.peak_shaving', {})
-        self.strategies['peak_shaving'] = PeakShavingStrategy(peak_shaving_config, self.device_manager)
-        
-        # 初始化需求响应策略
-        demand_response_config = self.config.get('strategy.demand_response', {})
-        self.strategies['demand_response'] = DemandResponseStrategy(demand_response_config, self.device_manager)
-        
-        # 初始化自发自用策略
-        self_consumption_config = self.config.get('strategy.self_consumption', {})
-        self.strategies['self_consumption'] = SelfConsumptionStrategy(self_consumption_config, self.device_manager)
+        controller_config = dict(self.config.get('control.mode_controller', {}))
+        controller_config['use_simulated_devices'] = self.config.get('control.use_simulated_devices', True)
+        self.strategies['mode_controller'] = ModeControllerStrategy(
+            controller_config,
+            self.device_manager,
+            self.data_collector,
+        )
     
     def start(self):
         """启动EdgeFusion应用"""

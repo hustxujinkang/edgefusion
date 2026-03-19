@@ -3,658 +3,338 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>台区智能融合终端监控面板 - EdgeFusion</title>
+    <title>EdgeFusion 运维控制台</title>
     <link href="{{ url_for('static', filename='vendor/bootstrap/css/bootstrap.min.css') }}" rel="stylesheet">
     <link href="{{ url_for('static', filename='vendor/bootstrap-icons/font/bootstrap-icons.css') }}" rel="stylesheet">
     <style>
         :root {
-            --primary-color: #0d6efd;
-            --success-color: #198754;
-            --warning-color: #ffc107;
-            --danger-color: #dc3545;
-            --dark-color: #212529;
+            --page-bg: #eef3f7;
+            --panel-bg: #ffffff;
+            --header-bg: #17324d;
+            --text-main: #1f2933;
+            --text-muted: #6b7c93;
+            --border-soft: #d9e2ec;
+            --shadow-soft: 0 10px 30px rgba(15, 23, 42, 0.08);
         }
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+            background: var(--page-bg);
+            color: var(--text-main);
             min-height: 100vh;
         }
-        .main-container {
-            background: #f8f9fa;
-            min-height: 100vh;
+        .page-header {
+            background: linear-gradient(135deg, var(--header-bg) 0%, #245d73 100%);
+            color: #fff;
+            padding: 2rem 0 1.5rem;
+            box-shadow: 0 10px 24px rgba(23, 50, 77, 0.25);
         }
-        .header {
-            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
-            color: white;
-            padding: 2rem 0;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+        .page-title { font-size: 2rem; font-weight: 700; }
+        .page-subtitle { color: rgba(255, 255, 255, 0.82); margin-top: 0.5rem; }
+        .status-badge {
+            display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.65rem 1rem;
+            border-radius: 999px; background: rgba(255, 255, 255, 0.12);
+            border: 1px solid rgba(255, 255, 255, 0.2); font-weight: 600;
         }
-        .header h1 {
-            font-weight: 700;
-            margin-bottom: 0.5rem;
+        .status-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+        .status-online { background: #2fb171; }
+        .status-offline { background: #d64545; }
+        .nav-pills { background: rgba(255,255,255,0.9); border-radius: 1rem; padding: 0.35rem; box-shadow: var(--shadow-soft); }
+        .nav-pills .nav-link { color: var(--text-muted); font-weight: 600; border-radius: 0.8rem; padding: 0.85rem 1rem; }
+        .nav-pills .nav-link.active { background: linear-gradient(135deg, #1f7a8c 0%, #2e5b85 100%); color: #fff; }
+        .card { border: 1px solid rgba(217, 226, 236, 0.9); border-radius: 1rem; background: var(--panel-bg); box-shadow: var(--shadow-soft); }
+        .card-header { background: transparent; border-bottom: 1px solid var(--border-soft); padding: 1rem 1.25rem; font-weight: 700; }
+        .card-subtitle { color: var(--text-muted); font-size: 0.9rem; margin-top: 0.25rem; }
+        .summary-card {
+            border-radius: 1rem; background: linear-gradient(180deg, #ffffff 0%, #f7fafc 100%);
+            padding: 1.25rem; border: 1px solid var(--border-soft); box-shadow: var(--shadow-soft); height: 100%;
         }
-        .header .subtitle {
-            opacity: 0.9;
-            font-size: 1.1rem;
+        .summary-label { color: var(--text-muted); font-size: 0.9rem; margin-bottom: 0.35rem; }
+        .summary-value { font-size: 2rem; font-weight: 700; line-height: 1.1; }
+        .summary-icon { font-size: 1.8rem; color: #1f7a8c; }
+        .panel-empty { padding: 2rem 1rem; text-align: center; color: var(--text-muted); }
+        .metric-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0.75rem; }
+        .metric-chip { padding: 0.85rem 1rem; border-radius: 0.85rem; background: #f8fbfd; border: 1px solid var(--border-soft); }
+        .chip-label { color: var(--text-muted); font-size: 0.82rem; }
+        .chip-value { font-weight: 700; font-size: 1.1rem; margin-top: 0.2rem; }
+        .mode-banner {
+            display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+            padding: 1rem 1.25rem; border-radius: 1rem;
+            background: linear-gradient(135deg, #e7f5f8 0%, #f1f7fb 100%);
+            border: 1px solid #c9e3ea;
         }
-        .nav-pills .nav-link {
-            color: #495057;
-            font-weight: 500;
-            padding: 0.75rem 1.25rem;
-            border-radius: 0.5rem;
-            margin: 0.25rem;
-            transition: all 0.3s ease;
-        }
-        .nav-pills .nav-link:hover {
-            background: #e9ecef;
-        }
-        .nav-pills .nav-link.active {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
-        }
-        .card {
-            border: none;
-            border-radius: 1rem;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.08);
-            transition: transform 0.3s ease, box-shadow 0.3s ease;
-        }
-        .card:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 8px 30px rgba(0,0,0,0.12);
-        }
-        .card-header {
-            background: white;
-            border-bottom: 2px solid #f0f0f0;
-            font-weight: 600;
-            padding: 1rem 1.5rem;
-            border-radius: 1rem 1rem 0 0 !important;
-        }
-        .stat-card {
-            background: white;
-            border-radius: 1rem;
-            padding: 1.5rem;
-            text-align: center;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.08);
-            transition: all 0.3s ease;
-        }
-        .stat-card:hover {
-            transform: translateY(-5px);
-            box-shadow: 0 8px 30px rgba(0,0,0,0.15);
-        }
-        .stat-icon {
-            font-size: 2.5rem;
-            margin-bottom: 0.5rem;
-        }
-        .stat-value {
-            font-size: 2rem;
-            font-weight: 700;
-            color: var(--dark-color);
-        }
-        .stat-label {
-            color: #6c757d;
-            font-weight: 500;
-        }
-        .api-card {
-            border-left: 4px solid var(--primary-color);
-            margin-bottom: 1rem;
-        }
-        .api-method {
-            display: inline-block;
-            padding: 0.25rem 0.75rem;
-            border-radius: 0.375rem;
-            font-size: 0.75rem;
-            font-weight: 700;
-            text-transform: uppercase;
-            margin-right: 0.5rem;
-        }
-        .method-get { background: #d1e7dd; color: #0f5132; }
-        .method-post { background: #fff3cd; color: #664d03; }
-        .method-put { background: #cff4fc; color: #055160; }
-        .method-delete { background: #f8d7da; color: #842029; }
-        .api-path {
-            font-family: 'Courier New', monospace;
-            background: #f8f9fa;
-            padding: 0.5rem 1rem;
-            border-radius: 0.5rem;
-            color: var(--primary-color);
-            font-weight: 600;
-        }
-        .api-description {
-            color: #6c757d;
-            margin-top: 0.5rem;
-        }
-        .badge-custom {
-            padding: 0.5rem 1rem;
-            font-weight: 500;
-        }
-        .status-dot {
-            display: inline-block;
-            width: 10px;
-            height: 10px;
-            border-radius: 50%;
-            margin-right: 8px;
-            animation: pulse 2s infinite;
-        }
-        @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.5; }
-        }
-        .status-online { background: #198754; }
-        .status-offline { background: #dc3545; }
-        .tab-content {
-            animation: fadeIn 0.3s ease;
-        }
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(10px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-        .footer {
-            background: #212529;
-            color: white;
-            padding: 2rem 0;
-            margin-top: 3rem;
-        }
+        .mode-name { font-size: 1.5rem; font-weight: 700; }
+        .pill-soft { display: inline-flex; align-items: center; gap: 0.35rem; padding: 0.35rem 0.7rem; border-radius: 999px; font-size: 0.8rem; font-weight: 700; }
+        .pill-success { background: #dff5e8; color: #18794e; }
+        .pill-warning { background: #fff4d6; color: #a15c00; }
+        .pill-danger { background: #fde7e9; color: #b42318; }
+        .pill-secondary { background: #eef2f6; color: #52606d; }
+        .pill-info { background: #dff2f8; color: #0f6e8c; }
+        .table thead th { color: var(--text-muted); font-size: 0.82rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; border-bottom-width: 1px; }
+        .table td, .table th { vertical-align: middle; }
         .refresh-btn {
-            position: fixed;
-            bottom: 2rem;
-            right: 2rem;
-            width: 60px;
-            height: 60px;
-            border-radius: 50%;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            border: none;
-            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.5);
-            font-size: 1.5rem;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            z-index: 1000;
+            position: fixed; right: 1.5rem; bottom: 1.5rem; width: 56px; height: 56px; border: none; border-radius: 50%;
+            background: linear-gradient(135deg, #1f7a8c 0%, #2e5b85 100%); color: white; box-shadow: 0 12px 24px rgba(31, 122, 140, 0.28); z-index: 1000;
         }
-        .refresh-btn:hover {
-            transform: scale(1.1) rotate(180deg);
-            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.7);
-        }
-        .table-responsive {
-            border-radius: 0.75rem;
-        }
-        .table thead {
-            background: #f8f9fa;
-        }
-        .table th {
-            font-weight: 600;
-            color: #495057;
-            border-bottom: 2px solid #dee2e6;
-        }
-        .parameter-badge {
-            font-size: 0.75rem;
-            background: #e7f3ff;
-            color: #0066cc;
-            padding: 0.25rem 0.5rem;
-            border-radius: 0.25rem;
-            margin-right: 0.25rem;
-        }
-        .device-action-btn {
-            margin-right: 0.25rem;
-        }
+        .section-note { color: var(--text-muted); font-size: 0.9rem; }
+        code { color: #0b5ed7; }
     </style>
 </head>
 <body>
-    <div class="main-container">
-        <div class="header">
+    <div class="main-shell">
+        <header class="page-header">
             <div class="container">
-                <div class="row align-items-center">
-                    <div class="col-md-8">
-                        <h1><i class="bi bi-lightning-charge-fill me-3"></i>EdgeFusion</h1>
-                        <p class="subtitle mb-0"><i class="bi bi-gear-fill me-2"></i>台区智能融合终端后台监控系统 (增强版)</p>
+                <div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-center gap-3">
+                    <div>
+                        <div class="page-title"><i class="bi bi-lightning-charge-fill me-2"></i>EdgeFusion 运维控制台</div>
+                        <div class="page-subtitle">围绕当前模式、接入设备、模式配置和诊断信息组织的台区智能融合终端后台界面。</div>
                     </div>
-                    <div class="col-md-4 text-end">
-                        <span class="badge bg-success badge-custom">
-                            <span class="status-dot status-online"></span>系统运行中
-                        </span>
+                    <div class="status-badge" id="systemStatusBadge">
+                        <span class="status-dot status-offline" id="systemStatusDot"></span>
+                        <span id="systemStatusText">状态检测中</span>
                     </div>
                 </div>
             </div>
-        </div>
-        <div class="container py-4">
+        </header>
+
+        <main class="container py-4">
             <ul class="nav nav-pills nav-fill mb-4" id="mainTabs" role="tablist">
-                <li class="nav-item">
-                    <button class="nav-link active" id="dashboard-tab" data-bs-toggle="pill" data-bs-target="#dashboard" type="button" role="tab">
-                        <i class="bi bi-speedometer2 me-2"></i>仪表板
-                    </button>
-                </li>
-                <li class="nav-item">
-                    <button class="nav-link" id="add-device-tab" data-bs-toggle="pill" data-bs-target="#add-device" type="button" role="tab">
-                        <i class="bi bi-plus-circle me-2"></i>添加设备
-                    </button>
-                </li>
-                <li class="nav-item">
-                    <button class="nav-link" id="device-mgr-tab" data-bs-toggle="pill" data-bs-target="#device-mgr" type="button" role="tab">
-                        <i class="bi bi-hdd-stack me-2"></i>设备管理
-                    </button>
-                </li>
-                <li class="nav-item">
-                    <button class="nav-link" id="strategies-tab" data-bs-toggle="pill" data-bs-target="#strategies" type="button" role="tab">
-                        <i class="bi bi-diagram-3 me-2"></i>控制策略
-                    </button>
-                </li>
-                <li class="nav-item">
-                    <button class="nav-link" id="api-tab" data-bs-toggle="pill" data-bs-target="#api" type="button" role="tab">
-                        <i class="bi bi-code-slash me-2"></i>API文档
-                    </button>
-                </li>
+                <li class="nav-item"><button class="nav-link active" data-bs-toggle="pill" data-bs-target="#overview" type="button" role="tab"><i class="bi bi-speedometer2 me-2"></i>运行总览</button></li>
+                <li class="nav-item"><button class="nav-link" data-bs-toggle="pill" data-bs-target="#device-access" type="button" role="tab"><i class="bi bi-hdd-network me-2"></i>设备接入</button></li>
+                <li class="nav-item"><button class="nav-link" data-bs-toggle="pill" data-bs-target="#mode-center" type="button" role="tab"><i class="bi bi-diagram-3 me-2"></i>模式中心</button></li>
+                <li class="nav-item"><button class="nav-link" data-bs-toggle="pill" data-bs-target="#mode-config" type="button" role="tab"><i class="bi bi-sliders me-2"></i>模式配置</button></li>
+                <li class="nav-item"><button class="nav-link" data-bs-toggle="pill" data-bs-target="#diagnostics" type="button" role="tab"><i class="bi bi-wrench-adjustable-circle me-2"></i>诊断</button></li>
             </ul>
-            <div class="tab-content" id="mainTabsContent">
-                <div class="tab-pane fade show active" id="dashboard" role="tabpanel">
-                    <div class="row g-4 mb-4">
-                        <div class="col-md-3">
-                            <div class="stat-card">
-                                <div class="stat-icon text-primary"><i class="bi bi-hdd"></i></div>
-                                <div class="stat-value" id="deviceCount">-</div>
-                                <div class="stat-label">设备总数</div>
-                            </div>
+
+            <div class="tab-content">
+                <div class="tab-pane fade show active" id="overview" role="tabpanel">
+                    <div class="card mb-4">
+                        <div class="card-header">
+                            采集状态
+                            <div class="card-subtitle">界面按采集周期呈现数据，不是毫秒级流数据。这里明确展示采集周期、最近采集和下一轮倒计时。</div>
                         </div>
-                        <div class="col-md-3">
-                            <div class="stat-card">
-                                <div class="stat-icon text-success"><i class="bi bi-check-circle"></i></div>
-                                <div class="stat-value" id="onlineDevices">-</div>
-                                <div class="stat-label">在线设备</div>
-                            </div>
-                        </div>
-                        <div class="col-md-3">
-                            <div class="stat-card">
-                                <div class="stat-icon text-warning"><i class="bi bi-database"></i></div>
-                                <div class="stat-value" id="dataPoints">-</div>
-                                <div class="stat-label">数据点数</div>
-                            </div>
-                        </div>
-                        <div class="col-md-3">
-                            <div class="stat-card">
-                                <div class="stat-icon text-info"><i class="bi bi-gear"></i></div>
-                                <div class="stat-value" id="connectedDeviceCount">0</div>
-                                <div class="stat-label">已连接设备</div>
+                        <div class="card-body">
+                            <div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-center gap-3">
+                                <div class="metric-grid flex-grow-1">
+                                    <div class="metric-chip"><div class="chip-label">采集周期</div><div class="chip-value" id="collectorIntervalValue">-</div></div>
+                                    <div class="metric-chip"><div class="chip-label">最近采集</div><div class="chip-value" id="collectorLatestValue">-</div></div>
+                                    <div class="metric-chip"><div class="chip-label">下次采集</div><div class="chip-value" id="collectorCountdownValue">-</div></div>
+                                </div>
+                                <div id="collectorPulseState"><span class="pill-soft pill-secondary">等待采集信息</span></div>
                             </div>
                         </div>
                     </div>
+
+                    <div class="row g-3 mb-4">
+                        <div class="col-md-3"><div class="summary-card"><div class="d-flex justify-content-between align-items-start"><div><div class="summary-label">当前模式</div><div class="summary-value" id="currentModeValue">-</div></div><i class="bi bi-activity summary-icon"></i></div></div></div>
+                        <div class="col-md-3"><div class="summary-card"><div class="d-flex justify-content-between align-items-start"><div><div class="summary-label">当前设备</div><div class="summary-value" id="activeDeviceCount">0</div></div><i class="bi bi-hdd-stack summary-icon"></i></div></div></div>
+                        <div class="col-md-3"><div class="summary-card"><div class="d-flex justify-content-between align-items-start"><div><div class="summary-label">在线设备</div><div class="summary-value" id="onlineDeviceCount">0</div></div><i class="bi bi-broadcast-pin summary-icon"></i></div></div></div>
+                        <div class="col-md-3"><div class="summary-card"><div class="d-flex justify-content-between align-items-start"><div><div class="summary-label">参与模式判断</div><div class="summary-value" id="participatingDeviceCount">0</div></div><i class="bi bi-funnel summary-icon"></i></div></div></div>
+                    </div>
+
                     <div class="row g-4">
-                        <div class="col-md-6">
-                            <div class="card">
-                                <div class="card-header d-flex justify-content-between align-items-center">
-                                    <span><i class="bi bi-info-circle me-2"></i>系统状态</span>
-                                    <a href="/api/status" class="btn btn-sm btn-outline-primary"><i class="bi bi-arrow-up-right me-1"></i>查看JSON</a>
-                                </div>
-                                <div class="card-body">
-                                    <div id="systemStatus">
-                                        <div class="text-center py-4 text-muted">
-                                            <div class="spinner-border" role="status"></div>
-                                            <p class="mt-2">加载中...</p>
-                                        </div>
-                                    </div>
-                                </div>
+                        <div class="col-lg-6">
+                            <div class="card h-100">
+                                <div class="card-header">当前运行状态<div class="card-subtitle">先看当前命中了什么模式、为什么命中、现在能不能闭环控制。</div></div>
+                                <div class="card-body"><div id="overviewModeSummary" class="panel-empty">加载中...</div></div>
                             </div>
                         </div>
-                        <div class="col-md-6">
-                            <div class="card">
-                                <div class="card-header d-flex justify-content-between align-items-center">
-                                    <span><i class="bi bi-database me-2"></i>数据采集状态</span>
-                                    <a href="/api/collector" class="btn btn-sm btn-outline-primary"><i class="bi bi-arrow-up-right me-1"></i>查看JSON</a>
-                                </div>
-                                <div class="card-body">
-                                    <div id="collectorStatus">
-                                        <div class="text-center py-4 text-muted">
-                                            <div class="spinner-border" role="status"></div>
-                                            <p class="mt-2">加载中...</p>
-                                        </div>
-                                    </div>
-                                </div>
+                        <div class="col-lg-6">
+                            <div class="card h-100">
+                                <div class="card-header">关键量测<div class="card-subtitle">这里展示模式机真正依赖的实时关键量，不再展示“数据点数”这类误导指标。</div></div>
+                                <div class="card-body"><div id="overviewMeasurements" class="panel-empty">加载中...</div></div>
                             </div>
                         </div>
-                    </div>
-                    <div class="row g-4 mt-4">
+                        <div class="col-lg-6">
+                            <div class="card h-100">
+                                <div class="card-header">阻塞与告警<div class="card-subtitle">如果当前只能监控或无法切到目标模式，优先看这里。</div></div>
+                                <div class="card-body"><div id="overviewBlockers" class="panel-empty">加载中...</div></div>
+                            </div>
+                        </div>
+                        <div class="col-lg-6">
+                            <div class="card h-100">
+                                <div class="card-header">最近控制动作<div class="card-subtitle">仅展示模式控制器最近一次下发的动作。</div></div>
+                                <div class="card-body"><div id="overviewActions" class="panel-empty">加载中...</div></div>
+                            </div>
+                        </div>
                         <div class="col-12">
                             <div class="card">
-                                <div class="card-header d-flex justify-content-between align-items-center">
-                                    <span><i class="bi bi-table me-2"></i>数据库统计</span>
-                                    <a href="/api/database" class="btn btn-sm btn-outline-primary"><i class="bi bi-arrow-up-right me-1"></i>查看JSON</a>
-                                </div>
-                                <div class="card-body">
-                                    <div id="databaseStats">
-                                        <div class="text-center py-4 text-muted">
-                                            <div class="spinner-border" role="status"></div>
-                                            <p class="mt-2">加载中...</p>
-                                        </div>
-                                    </div>
-                                </div>
+                                <div class="card-header">参与模式判断的设备<div class="card-subtitle">当前真正纳入模式判断的设备清单；是否纳入会受“模拟设备参与模式判断”开关影响。</div></div>
+                                <div class="card-body"><div id="overviewParticipation" class="panel-empty">加载中...</div></div>
                             </div>
                         </div>
                     </div>
                 </div>
-                <div class="tab-pane fade" id="add-device" role="tabpanel">
-                    <div class="card">
-                        <div class="card-header">
-                            <i class="bi bi-plus-circle me-2"></i>添加Modbus设备
-                        </div>
-                        <div class="card-body">
-                            <div class="row">
-                                <div class="col-md-6">
-                                    <h5 class="fw-bold mb-3"><i class="bi bi-gear me-2 text-primary"></i>设备配置</h5>
+
+                <div class="tab-pane fade" id="device-access" role="tabpanel">
+                    <div class="row g-4">
+                        <div class="col-lg-6">
+                            <div class="card h-100">
+                                <div class="card-header">接入真实设备<div class="card-subtitle">真实设备通过接入测试后先进入候选设备，再由你显式接入到当前系统。</div></div>
+                                <div class="card-body">
                                     <form id="addDeviceForm">
-                                        <div class="mb-3">
-                                            <label class="form-label fw-bold">设备ID</label>
-                                            <input type="text" class="form-control" id="deviceId" placeholder="例如: charger_001" required>
-                                        </div>
-                                        <div class="mb-3">
-                                            <label class="form-label fw-bold">设备类型</label>
-                                            <select class="form-select" id="deviceType">
-                                                <option value="charging_station">充电桩</option>
-                                                <option value="pv">光伏逆变器</option>
-                                                <option value="energy_storage">储能系统</option>
-                                                <option value="modbus_device">通用Modbus设备</option>
-                                            </select>
-                                        </div>
-                                        <div class="mb-3">
-                                            <label class="form-label fw-bold">设备型号</label>
-                                            <select class="form-select" id="deviceModel">
-                                                <option value="">通用设备（无型号）</option>
-                                                <option value="generic_charger">通用充电桩</option>
-                                                <option value="xj_dc_120kw">许继 120kW 直流桩</option>
-                                                <option value="xj_dc_240kw">许继 240kW 直流桩</option>
-                                            </select>
-                                            <div class="form-text">选择型号将启用对应的点表配置</div>
-                                        </div>
+                                        <div class="mb-3"><label class="form-label fw-bold">设备ID</label><input type="text" class="form-control" id="deviceId" placeholder="例如: charger_001" required></div>
+                                        <div class="mb-3"><label class="form-label fw-bold">设备类型</label><select class="form-select" id="deviceType"><option value="charging_station">充电桩</option><option value="pv">光伏逆变器</option><option value="energy_storage">储能系统</option><option value="grid_meter">总表</option><option value="modbus_device">通用Modbus设备</option></select></div>
+                                        <div class="mb-3"><label class="form-label fw-bold">设备型号</label><select class="form-select" id="deviceModel"><option value="">通用设备（无型号）</option><option value="generic_charger">通用充电桩</option><option value="xj_dc_120kw">许继 120kW 直流桩</option><option value="xj_dc_240kw">许继 240kW 直流桩</option></select></div>
                                         <div class="row">
-                                            <div class="col-md-6 mb-3">
-                                                <label class="form-label fw-bold">主机地址</label>
-                                                <input type="text" class="form-control" id="modbusHost" value="localhost" required>
-                                            </div>
-                                            <div class="col-md-6 mb-3">
-                                                <label class="form-label fw-bold">端口</label>
-                                                <input type="number" class="form-control" id="modbusPort" value="502" required>
-                                            </div>
+                                            <div class="col-md-6 mb-3"><label class="form-label fw-bold">主机地址</label><input type="text" class="form-control" id="modbusHost" value="localhost" required></div>
+                                            <div class="col-md-6 mb-3"><label class="form-label fw-bold">端口</label><input type="number" class="form-control" id="modbusPort" value="502" required></div>
                                         </div>
-                                        <div class="mb-3">
-                                            <label class="form-label fw-bold">单元ID (Slave ID)</label>
-                                            <input type="number" class="form-control" id="modbusUnitId" value="1" required>
-                                        </div>
+                                        <div class="mb-3"><label class="form-label fw-bold">单元ID</label><input type="number" class="form-control" id="modbusUnitId" value="1" required></div>
                                         <div class="d-flex gap-2">
-                                            <button type="button" class="btn btn-outline-primary" onclick="testModbusConnection()">
-                                                <i class="bi bi-wifi me-1"></i>测试连接
-                                            </button>
-                                            <button type="submit" class="btn btn-primary">
-                                                <i class="bi bi-plus-circle me-1"></i>添加设备
-                                            </button>
+                                            <button type="button" class="btn btn-outline-primary" onclick="testModbusConnection()"><i class="bi bi-wifi me-1"></i>测试连接</button>
+                                            <button type="submit" class="btn btn-primary"><i class="bi bi-plus-circle me-1"></i>加入候选设备</button>
                                         </div>
                                     </form>
                                     <div id="testResult" class="mt-3"></div>
                                 </div>
-                                <div class="col-md-6">
-                                    <h5 class="fw-bold mb-3"><i class="bi bi-lightbulb me-2 text-warning"></i>快速配置</h5>
-                                    <div class="alert alert-info">
-                                        <h6 class="fw-bold"><i class="bi bi-info-circle me-1"></i>Modbus充电桩模拟器</h6>
-                                        <p class="mb-2">如果正在运行模拟器，使用以下配置：</p>
-                                        <ul class="mb-0">
-                                            <li><strong>主机:</strong> localhost</li>
-                                            <li><strong>端口:</strong> 502</li>
-                                            <li><strong>单元ID:</strong> 1</li>
-                                        </ul>
-                                    </div>
-                                    <div class="card bg-light">
-                                        <div class="card-body">
-                                            <h6 class="fw-bold"><i class="bi bi-terminal me-1"></i>启动模拟器</h6>
-                                            <code class="text-primary">python modbus_charger_simulator.py</code>
-                                        </div>
+                            </div>
+                        </div>
+                        <div class="col-lg-6">
+                            <div class="card h-100" id="simulationScenarioCard" style="display: none;">
+                                <div class="card-header">仿真场景<div class="card-subtitle">仿真设备默认只进入候选设备，不会自动成为当前设备。</div></div>
+                                <div class="card-body">
+                                    <div class="d-flex justify-content-between align-items-center mb-3"><span class="section-note">当前场景</span><span class="pill-soft pill-info" id="simulationScenarioCurrent">未启用</span></div>
+                                    <div class="mb-3"><select class="form-select" id="simulationScenarioSelect"><option value="">加载中...</option></select></div>
+                                    <button class="btn btn-primary w-100" onclick="applySimulationScenario()"><i class="bi bi-cloud-upload me-1"></i>应用场景到候选设备</button>
+                                    <div id="simulationScenarioStatus" class="mt-3 section-note">检测仿真状态中...</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-12">
+                            <div class="card">
+                                <div class="card-header d-flex justify-content-between align-items-center"><div>候选设备<div class="card-subtitle">候选设备可来自 simulation 或真实设备接入测试，通过“接入”才会成为当前设备。已接入设备仍保留在这里，但不能直接删除。</div></div><button class="btn btn-sm btn-outline-primary" onclick="loadDeviceCandidates()"><i class="bi bi-arrow-repeat me-1"></i>刷新</button></div>
+                                <div class="card-body"><div id="candidateDeviceList" class="panel-empty">加载中...</div></div>
+                            </div>
+                        </div>
+                        <div class="col-12">
+                            <div class="card">
+                                <div class="card-header d-flex justify-content-between align-items-center"><div>当前设备<div class="card-subtitle">这里才是系统当前真正使用的设备列表，模式判断和控制分配都基于它。断开后设备会留在候选设备里，便于再次接入。</div></div><button class="btn btn-sm btn-outline-primary" onclick="loadConnectedDevices()"><i class="bi bi-arrow-repeat me-1"></i>刷新</button></div>
+                                <div class="card-body"><div id="connectedDeviceList" class="panel-empty">加载中...</div></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="tab-pane fade" id="mode-center" role="tabpanel">
+                    <div class="row g-4">
+                        <div class="col-lg-5"><div class="card h-100"><div class="card-header">当前模式<div class="card-subtitle">这里回答“当前为什么是这个模式”。</div></div><div class="card-body"><div id="modeCenterSummary" class="panel-empty">加载中...</div></div></div></div>
+                        <div class="col-lg-7"><div class="card h-100"><div class="card-header">模式可用性<div class="card-subtitle">展示软件支持哪些模式、哪些模式当前可用，以及不可用原因。</div></div><div class="card-body"><div id="modeSupportList" class="panel-empty">加载中...</div></div></div></div>
+                    </div>
+                </div>
+
+                <div class="tab-pane fade" id="mode-config" role="tabpanel">
+                    <div class="row g-4">
+                        <div class="col-lg-5">
+                            <div class="card h-100">
+                                <div class="card-header">全局控制开关<div class="card-subtitle">模拟设备可以接入系统，但是否参与模式判断和控制分配由这里统一决定。</div></div>
+                                <div class="card-body">
+                                    <div class="form-check form-switch mb-3"><input class="form-check-input" type="checkbox" role="switch" id="useSimulatedDevicesSwitch"><label class="form-check-label fw-bold" for="useSimulatedDevicesSwitch">模拟设备参与模式判断</label></div>
+                                    <div class="section-note">关闭后，simulation 设备仍会显示在设备接入页，但不会被纳入模式判断，也不会参与控制分配。</div>
+                                    <div id="controlSettingsStatus" class="mt-3 section-note">检测设置中...</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-lg-7">
+                            <div class="card h-100">
+                                <div class="card-header">模式参数<div class="card-subtitle">按模式元数据动态展示可配置项，不再把反送保护写死成唯一配置面板。</div></div>
+                                <div class="card-body">
+                                    <div id="modeConfigPanels" class="d-flex flex-column gap-3"><div class="panel-empty">加载模式配置中...</div></div>
+                                    <div class="mt-4 d-flex gap-2">
+                                        <button class="btn btn-primary" onclick="saveModeConfig()"><i class="bi bi-save me-1"></i>保存模式配置</button>
+                                        <button class="btn btn-outline-secondary" onclick="loadModeConfig()"><i class="bi bi-arrow-repeat me-1"></i>重新读取</button>
                                     </div>
                                 </div>
                             </div>
                         </div>
                     </div>
                 </div>
-                <div class="tab-pane fade" id="device-mgr" role="tabpanel">
-                    <div class="card mb-4">
-                        <div class="card-header d-flex justify-content-between align-items-center">
-                            <span><i class="bi bi-list-ul me-2"></i>已连接设备</span>
-                            <button class="btn btn-sm btn-outline-primary" onclick="loadConnectedDevices()">
-                                <i class="bi bi-arrow-repeat me-1"></i>刷新
-                            </button>
-                        </div>
-                        <div class="card-body">
-                            <div id="connectedDeviceList">
-                                <div class="text-center py-4 text-muted">
-                                    <div class="spinner-border" role="status"></div>
-                                    <p class="mt-2">加载中...</p>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="card" id="deviceDetailCard" style="display: none;">
-                        <div class="card-header d-flex justify-content-between align-items-center">
-                            <span><i class="bi bi-tools me-2"></i>设备操作 - <span id="currentDeviceName">-</span></span>
-                        </div>
-                        <div class="card-body">
-                            <div class="row">
-                                <div class="col-md-6">
-                                    <h6 class="fw-bold mb-3"><i class="bi bi-arrow-down-circle me-2 text-success"></i>读取寄存器</h6>
-                                    <div class="mb-3">
-                                        <label class="form-label">寄存器地址</label>
-                                        <select class="form-select" id="readRegister">
-                                            <option value="">请选择...</option>
-                                        </select>
-                                        <div class="form-text" id="readRegisterDesc">选择要读取的寄存器</div>
-                                    </div>
-                                    <button class="btn btn-success w-100" onclick="readRegister()">
-                                        <i class="bi bi-download me-1"></i>读取
-                                    </button>
-                                    <div id="readResult" class="mt-3"></div>
-                                </div>
-                                <div class="col-md-6">
-                                    <h6 class="fw-bold mb-3"><i class="bi bi-arrow-up-circle me-2 text-primary"></i>写入寄存器</h6>
-                                    <div class="mb-3">
-                                        <label class="form-label">寄存器地址</label>
-                                        <select class="form-select" id="writeRegister">
-                                            <option value="">请选择...</option>
-                                        </select>
-                                    </div>
-                                    <div class="mb-3">
-                                        <label class="form-label">写入值</label>
-                                        <input type="number" class="form-control" id="writeValue" value="0">
-                                    </div>
-                                    <button class="btn btn-primary w-100" onclick="writeRegister()">
-                                        <i class="bi bi-upload me-1"></i>写入
-                                    </button>
-                                    <div id="writeResult" class="mt-3"></div>
-                                </div>
-                            </div>
-                            <hr>
-                            <!-- 【新增】枪数据显示面板 -->
-                            <div class="row mt-4">
-                                <div class="col-12">
-                                    <h6 class="fw-bold mb-3"><i class="bi bi-ev-station me-2 text-primary"></i>枪数据监控</h6>
-                                    <div class="mb-3">
-                                        <label class="form-label">选择枪号</label>
-                                        <select class="form-select" id="gunSelector" onchange="loadGunData()" style="width: auto; display: inline-block;">
-                                            <option value="1">枪 1</option>
-                                            <option value="2">枪 2</option>
-                                        </select>
-                                        <button class="btn btn-sm btn-outline-primary ms-2" onclick="loadGunData()">
-                                            <i class="bi bi-arrow-repeat"></i> 刷新
-                                        </button>
-                                    </div>
-                                    <div id="gunDataPanel">
-                                        <div class="text-center text-muted py-4">
-                                            <div class="spinner-border spinner-border-sm"></div>
-                                            <p class="mt-2">点击刷新按钮加载枪数据</p>
-                                        </div>
+
+                <div class="tab-pane fade" id="diagnostics" role="tabpanel">
+                    <div class="row g-4">
+                        <div class="col-lg-6"><div class="card h-100"><div class="card-header">采集器摘要<div class="card-subtitle">用于诊断采集线程和采集缓冲区行为。</div></div><div class="card-body"><div id="collectorStatus" class="panel-empty">加载中...</div></div></div></div>
+                        <div class="col-lg-6"><div class="card h-100"><div class="card-header">数据库记录计数<div class="card-subtitle">这里只是数据库中已写入的历史采集记录数，不代表当前系统运行态。</div></div><div class="card-body"><div id="databaseStats" class="panel-empty">加载中...</div></div></div></div>
+                        <div class="col-12"><div class="card"><div class="card-header">最新采集快照<div class="card-subtitle">这是当前模式判断实际会消费的原始快照视图。</div></div><div class="card-body"><div id="liveSnapshotList" class="panel-empty">加载中...</div></div></div></div>
+                        <div class="col-12">
+                            <div class="card">
+                                <div class="card-header">API 快捷入口<div class="card-subtitle">保留底层接口入口，但不再作为首页主内容。</div></div>
+                                <div class="card-body">
+                                    <div class="row g-3">
+                                        <div class="col-md-4"><a class="btn btn-outline-primary w-100" href="/api/status" target="_blank">/api/status</a></div>
+                                        <div class="col-md-4"><a class="btn btn-outline-primary w-100" href="/api/modes/summary" target="_blank">/api/modes/summary</a></div>
+                                        <div class="col-md-4"><a class="btn btn-outline-primary w-100" href="/api/modes/config" target="_blank">/api/modes/config</a></div>
+                                        <div class="col-md-4"><a class="btn btn-outline-secondary w-100" href="/api/collector" target="_blank">/api/collector</a></div>
+                                        <div class="col-md-4"><a class="btn btn-outline-secondary w-100" href="/api/collector/latest" target="_blank">/api/collector/latest</a></div>
+                                        <div class="col-md-4"><a class="btn btn-outline-secondary w-100" href="/api/database" target="_blank">/api/database</a></div>
                                     </div>
                                 </div>
                             </div>
-                            <hr>
-                            <!-- 【新增】充电控制面板 -->
-                            <div class="row mt-4">
-                                <div class="col-12">
-                                    <h6 class="fw-bold mb-3"><i class="bi bi-sliders me-2 text-primary"></i>充电控制</h6>
-                                    
-                                    <!-- 功率限制滑块 -->
-                                    <div class="mb-4">
-                                        <label class="form-label fw-bold">功率限制: <span id="powerLimitValue" class="text-primary">120</span> kW</label>
-                                        <input type="range" class="form-range" id="powerLimitSlider" 
-                                               min="0" max="120" value="120" step="5">
-                                    </div>
-                                    
-                                    <!-- 目标SOC -->
-                                    <div class="mb-4">
-                                        <label class="form-label fw-bold">目标SOC: <span id="targetSocValue" class="text-primary">100</span>%</label>
-                                        <input type="range" class="form-range" id="targetSocSlider" 
-                                               min="10" max="100" value="100" step="5">
-                                    </div>
-                                    
-                                    <!-- 控制按钮 -->
-                                    <div class="d-flex gap-2 mb-3">
-                                        <button class="btn btn-success" onclick="controlDevice('start_charging')">
-                                            <i class="bi bi-play-fill me-1"></i>开始充电
-                                        </button>
-                                        <button class="btn btn-warning" onclick="controlDevice('stop_charging')">
-                                            <i class="bi bi-stop-fill me-1"></i>停止充电
-                                        </button>
-                                        <button class="btn btn-outline-secondary" onclick="controlDevice('clear_fault')">
-                                            <i class="bi bi-check-circle me-1"></i>清除故障
-                                        </button>
-                                        <button class="btn btn-danger" onclick="controlDevice('emergency_stop')">
-                                            <i class="bi bi-exclamation-triangle me-1"></i>急停
-                                        </button>
-                                    </div>
-                                    
-                                    <!-- 控制结果 -->
-                                    <div id="controlResult"></div>
-                                </div>
-                            </div>
-                            <hr>
-                            <!-- 寄存器快速访问（型号自适应） -->
-                            <div class="row mt-4">
-                                <div class="col-12">
-                                    <h6 class="fw-bold mb-3"><i class="bi bi-grid-3x3 me-2 text-info"></i>充电桩寄存器快速访问</h6>
-                                    <div class="table-responsive">
-                                        <table class="table table-sm table-striped" id="quickAccessTable">
-                                            <thead>
-                                                <tr><th>地址</th><th>描述</th><th>单位</th><th>操作</th></tr>
-                                            </thead>
-                                            <tbody id="quickAccessBody">
-                                                <!-- 动态生成 -->
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                <div class="tab-pane fade" id="strategies" role="tabpanel">
-                    <div class="card">
-                        <div class="card-header d-flex justify-content-between align-items-center">
-                            <span><i class="bi bi-list-ul me-2"></i>策略列表</span>
-                            <a href="/api/strategies" class="btn btn-sm btn-outline-primary"><i class="bi bi-arrow-up-right me-1"></i>查看JSON</a>
-                        </div>
-                        <div class="card-body">
-                            <div id="strategyList">
-                                <div class="text-center py-4 text-muted">
-                                    <div class="spinner-border" role="status"></div>
-                                    <p class="mt-2">加载中...</p>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                <div class="tab-pane fade" id="api" role="tabpanel">
-                    <div class="card mb-4">
-                        <div class="card-header">
-                            <i class="bi bi-book me-2"></i>API接口文档
-                        </div>
-                        <div class="card-body">
-                            <p class="text-muted">
-                                以下是EdgeFusion系统提供的所有RESTful API接口。所有接口返回JSON格式数据。
-                            </p>
-                        </div>
-                    </div>
-                    <div class="card api-card mb-3">
-                        <div class="card-body">
-                            <div class="d-flex align-items-center mb-2">
-                                <span class="api-method method-get">GET</span>
-                                <span class="api-path">/api/status</span>
-                            </div>
-                            <h5 class="fw-bold">系统状态</h5>
-                            <p class="api-description">获取整个系统的运行状态。</p>
-                        </div>
-                    </div>
-                    <div class="card api-card mb-3">
-                        <div class="card-body">
-                            <div class="d-flex align-items-center mb-2">
-                                <span class="api-method method-get">GET</span>
-                                <span class="api-path">/api/devices/connected</span>
-                            </div>
-                            <h5 class="fw-bold">已连接设备</h5>
-                            <p class="api-description">获取通过Web界面添加的设备列表。</p>
-                        </div>
-                    </div>
-                    <div class="card api-card mb-3">
-                        <div class="card-body">
-                            <div class="d-flex align-items-center mb-2">
-                                <span class="api-method method-post">POST</span>
-                                <span class="api-path">/api/devices/test-modbus</span>
-                            </div>
-                            <h5 class="fw-bold">测试Modbus连接</h5>
-                            <p class="api-description">测试与Modbus设备的连接是否正常。</p>
-                        </div>
-                    </div>
-                    <div class="card api-card mb-3">
-                        <div class="card-body">
-                            <div class="d-flex align-items-center mb-2">
-                                <span class="api-method method-post">POST</span>
-                                <span class="api-path">/api/devices/add-modbus</span>
-                            </div>
-                            <h5 class="fw-bold">添加Modbus设备</h5>
-                            <p class="api-description">添加一个新的Modbus设备到系统。</p>
-                        </div>
-                    </div>
-                    <div class="card api-card mb-3">
-                        <div class="card-body">
-                            <div class="d-flex align-items-center mb-2">
-                                <span class="api-method method-post">POST</span>
-                                <span class="api-path">/api/devices/{device_id}/read-register</span>
-                            </div>
-                            <h5 class="fw-bold">读取寄存器</h5>
-                            <p class="api-description">从指定设备读取Modbus寄存器的值。</p>
-                        </div>
-                    </div>
-                    <div class="card api-card mb-3">
-                        <div class="card-body">
-                            <div class="d-flex align-items-center mb-2">
-                                <span class="api-method method-post">POST</span>
-                                <span class="api-path">/api/devices/{device_id}/write-register</span>
-                            </div>
-                            <h5 class="fw-bold">写入寄存器</h5>
-                            <p class="api-description">向指定设备写入Modbus寄存器的值。</p>
                         </div>
                     </div>
                 </div>
             </div>
-        </div>
-        <div class="footer">
-            <div class="container text-center">
-                <p class="mb-1">
-                    <i class="bi bi-lightning-charge-fill me-2"></i><strong>EdgeFusion</strong> - 台区智能融合终端后台系统 (增强版)
-                </p>
-                <p class="mb-0 small text-muted">
-                    版本 0.2.0 | <i class="bi bi-github me-1"></i>支持设备管理和Modbus操作
-                </p>
-            </div>
-        </div>
+        </main>
     </div>
-    <button class="refresh-btn" onclick="refreshAllData()" title="刷新数据">
-        <i class="bi bi-arrow-repeat"></i>
-    </button>
+
+    <button class="refresh-btn" onclick="refreshAllData()" title="刷新所有页面数据"><i class="bi bi-arrow-repeat"></i></button>
+
     <script src="{{ url_for('static', filename='vendor/bootstrap/js/bootstrap.bundle.min.js') }}"></script>
     <script>
-        let currentDeviceId = null;
-        
+        let connectedDevices = [];
+        let candidateDevices = [];
+        let latestCollectorSummary = null;
+        let latestModeSummary = null;
+        let currentModeConfig = null;
+        let collectorTickerHandle = null;
+        let autoRefreshHandle = null;
+        let refreshInFlight = false;
+
+        const REASON_LABELS = {
+            export_limit_exceeded: '总表反送超过配置阈值',
+            untrusted_site_state: '关键测量缺失或过期，系统进入保守运行',
+            missing_grid_power: '缺少总表功率测量',
+            no_export_control_capability: '存在反送风险，但当前没有可执行的在线控制对象',
+            no_active_devices: '当前没有已接入设备，模式机不会参与监测和控制',
+            export_protect_disabled: '反送保护已被配置禁用',
+            normal_operation: '当前没有更高优先级模式触发条件',
+            manual_override_enabled: '人工接管已开启',
+            manual_override_inactive: '当前未启用人工接管',
+            site_state_trusted: '关键测量可信',
+            site_state_untrusted: '关键测量不可信',
+            export_within_limit: '当前反送未达到进入阈值',
+            mode_disabled: '当前模式已被禁用',
+            inactive: '当前未命中该模式',
+            mode_controller_unavailable: '模式控制器未注册',
+            not_started: '模式控制器尚未执行'
+        };
+
+        function formatReason(reason) {
+            if (!reason) return '-';
+            return REASON_LABELS[reason] || reason.replace(/_/g, ' ');
+        }
+
+        function statusBadge(status) {
+            const online = String(status || '').toLowerCase() === 'online';
+            return online ? '<span class="pill-soft pill-success">在线</span>' : '<span class="pill-soft pill-danger">离线</span>';
+        }
+
+        function sourceBadge(source) {
+            return source === 'simulated'
+                ? '<span class="pill-soft pill-info">simulated</span>'
+                : '<span class="pill-soft pill-secondary">real</span>';
+        }
+
+        function controlStateBadge(controlState) {
+            return controlState === 'closed_loop'
+                ? '<span class="pill-soft pill-success">可闭环</span>'
+                : '<span class="pill-soft pill-warning">仅监控</span>';
+        }
+
+        function yesNoBadge(value) {
+            return value
+                ? '<span class="pill-soft pill-success">是</span>'
+                : '<span class="pill-soft pill-secondary">否</span>';
+        }
+
         async function fetchJSON(url, options = {}) {
             try {
                 const response = await fetch(url, {
@@ -662,499 +342,586 @@
                     ...options
                 });
                 return await response.json();
-            } catch (e) {
-                console.error('请求失败:', e);
+            } catch (error) {
+                console.error('请求失败:', error);
                 return null;
             }
         }
-        
+
         async function postJSON(url, data) {
-            return fetchJSON(url, {
-                method: 'POST',
-                body: JSON.stringify(data)
-            });
+            return fetchJSON(url, { method: 'POST', body: JSON.stringify(data) });
         }
-        
-        async function loadSystemStatus() {
+
+        async function deleteJSON(url) {
+            return fetchJSON(url, { method: 'DELETE' });
+        }
+
+        async function loadRuntimeStatus() {
             const data = await fetchJSON('/api/status');
-            const container = document.getElementById('systemStatus');
+            const dot = document.getElementById('systemStatusDot');
+            const text = document.getElementById('systemStatusText');
+
             if (!data) {
-                container.innerHTML = '<div class="alert alert-danger">加载失败</div>';
+                dot.className = 'status-dot status-offline';
+                text.textContent = '状态获取失败';
                 return;
             }
-            // 更新设备统计卡片
-            document.getElementById('deviceCount').textContent = data.device_count || 0;
-            document.getElementById('onlineDevices').textContent = data.online_devices || 0;
-            
-            let html = '<div class="table-responsive"><table class="table table-sm">';
-            html += '<tr><th width="40%">状态</th><td><span class="badge bg-success">' + (data.status || 'running') + '</span></td></tr>';
-            html += '<tr><th>面板地址</th><td><code>' + (data.dashboard_url || '-') + '</code></td></tr>';
-            html += '</table></div>';
+
+            const isRunning = data.status === 'running';
+            dot.className = 'status-dot ' + (isRunning ? 'status-online' : 'status-offline');
+            text.textContent = isRunning ? '系统运行中' : '系统已停止';
+        }
+
+        async function loadModeSummary() {
+            const data = await fetchJSON('/api/modes/summary');
+            if (!data) return;
+            latestModeSummary = data;
+
+            document.getElementById('currentModeValue').textContent = data.current_mode_label || '-';
+            document.getElementById('activeDeviceCount').textContent = data.counts?.active_devices ?? 0;
+            document.getElementById('onlineDeviceCount').textContent = data.counts?.online_devices ?? 0;
+            document.getElementById('participatingDeviceCount').textContent = data.counts?.participating_devices ?? 0;
+
+            renderOverviewSummary(data);
+            renderOverviewMeasurements(data);
+            renderOverviewBlockers(data);
+            renderOverviewActions(data);
+            renderOverviewParticipation(data);
+            renderModeCenter(data);
+            renderCollectorPulse();
+        }
+
+        function renderOverviewSummary(data) {
+            const container = document.getElementById('overviewModeSummary');
+            container.innerHTML = `
+                <div class="mode-banner mb-3">
+                    <div><div class="section-note">当前命中模式</div><div class="mode-name">${data.current_mode_label || '-'}</div></div>
+                    ${controlStateBadge(data.control_state)}
+                </div>
+                <div class="metric-grid">
+                    <div class="metric-chip"><div class="chip-label">当前原因</div><div class="chip-value">${formatReason(data.current_reason)}</div></div>
+                    <div class="metric-chip"><div class="chip-label">模式判断纳入模拟设备</div><div class="chip-value">${data.use_simulated_devices ? '是' : '否'}</div></div>
+                    <div class="metric-chip"><div class="chip-label">站点状态可信</div><div class="chip-value">${data.trust?.trusted ? '是' : '否'}</div></div>
+                </div>
+            `;
+        }
+
+        function renderOverviewMeasurements(data) {
+            const m = data.key_measurements || {};
+            document.getElementById('overviewMeasurements').innerHTML = `
+                <div class="metric-grid">
+                    <div class="metric-chip"><div class="chip-label">总表功率</div><div class="chip-value">${m.grid_power_w ?? '-'}</div></div>
+                    <div class="metric-chip"><div class="chip-label">光伏功率</div><div class="chip-value">${m.pv_power_w ?? '-'}</div></div>
+                    <div class="metric-chip"><div class="chip-label">快照时间</div><div class="chip-value">${m.timestamp || '-'}</div></div>
+                </div>
+            `;
+        }
+
+        function renderOverviewBlockers(data) {
+            const blockers = data.blockers || [];
+            const trustIssues = data.trust?.issues || [];
+            const container = document.getElementById('overviewBlockers');
+            if (blockers.length === 0 && trustIssues.length === 0) {
+                container.innerHTML = '<div class="alert alert-success mb-0">当前没有阻塞项。</div>';
+                return;
+            }
+            let html = '<div class="d-flex flex-column gap-2">';
+            for (const blocker of blockers) {
+                html += `<div class="alert alert-warning mb-0">${formatReason(blocker)}</div>`;
+            }
+            if ((data.counts?.active_devices ?? 0) === 0 && (data.counts?.candidate_devices ?? 0) > 0) {
+                html += `<div class="alert alert-info mb-0">当前没有已接入设备，但有 ${data.counts.candidate_devices} 台候选设备。请先到“设备接入”页执行接入。</div>`;
+            }
+            for (const issue of trustIssues) html += `<div class="alert alert-secondary mb-0">${formatReason(issue)}</div>`;
+            html += '</div>';
             container.innerHTML = html;
         }
-        
+
+        function renderOverviewActions(data) {
+            const actions = data.recent_actions || [];
+            const container = document.getElementById('overviewActions');
+            if (actions.length === 0) {
+                container.innerHTML = '<div class="alert alert-info mb-0">最近没有控制动作。</div>';
+                return;
+            }
+            let html = '<div class="table-responsive"><table class="table table-hover"><thead><tr><th>设备</th><th>动作</th><th>目标值</th><th>原因</th></tr></thead><tbody>';
+            for (const action of actions) {
+                html += `<tr><td><code>${action.device_id}</code></td><td>${action.action}</td><td>${action.value_w}</td><td>${formatReason(action.reason)}</td></tr>`;
+            }
+            html += '</tbody></table></div>';
+            container.innerHTML = html;
+        }
+
+        function renderOverviewParticipation(data) {
+            const devices = data.participating_devices || [];
+            const container = document.getElementById('overviewParticipation');
+            if (devices.length === 0) {
+                container.innerHTML = '<div class="alert alert-info mb-0">当前没有设备参与模式判断。</div>';
+                return;
+            }
+            let html = '<div class="table-responsive"><table class="table table-hover"><thead><tr><th>设备ID</th><th>类型</th><th>来源</th><th>接入方式</th><th>状态</th></tr></thead><tbody>';
+            for (const device of devices) {
+                html += `<tr><td><code>${device.device_id}</code></td><td>${device.device_type || '-'}</td><td>${sourceBadge(device.source)}</td><td>${device.protocol || '-'}</td><td>${statusBadge(device.status)}</td></tr>`;
+            }
+            html += '</tbody></table></div>';
+            container.innerHTML = html;
+        }
+
+        function renderModeCenter(data) {
+            document.getElementById('modeCenterSummary').innerHTML = `
+                <div class="mode-banner mb-3">
+                    <div><div class="section-note">当前模式</div><div class="mode-name">${data.current_mode_label || '-'}</div></div>
+                    ${controlStateBadge(data.control_state)}
+                </div>
+                <div class="metric-grid">
+                    <div class="metric-chip"><div class="chip-label">当前原因</div><div class="chip-value">${formatReason(data.current_reason)}</div></div>
+                    <div class="metric-chip"><div class="chip-label">阻塞项数量</div><div class="chip-value">${(data.blockers || []).length}</div></div>
+                    <div class="metric-chip"><div class="chip-label">参与判断设备</div><div class="chip-value">${data.counts?.participating_devices ?? 0}</div></div>
+                </div>
+            `;
+
+            const modes = data.supported_modes || [];
+            const container = document.getElementById('modeSupportList');
+            if (modes.length === 0) {
+                container.innerHTML = '<div class="alert alert-info mb-0">当前没有可展示的模式信息。</div>';
+                return;
+            }
+            let html = '<div class="table-responsive"><table class="table table-hover"><thead><tr><th>模式</th><th>启用</th><th>当前可用</th><th>当前命中</th><th>说明</th></tr></thead><tbody>';
+            for (const mode of modes) {
+                html += `<tr><td><div class="fw-bold">${mode.label || mode.name}</div><div class="small text-muted">${mode.description || ''}</div></td><td>${yesNoBadge(mode.enabled)}</td><td>${yesNoBadge(mode.available)}</td><td>${mode.active ? '<span class="pill-soft pill-info">当前模式</span>' : '<span class="pill-soft pill-secondary">否</span>'}</td><td>${formatReason(mode.reason)}</td></tr>`;
+            }
+            html += '</tbody></table></div>';
+            container.innerHTML = html;
+        }
+
+        async function loadModeConfig() {
+            const data = await fetchJSON('/api/modes/config');
+            const status = document.getElementById('controlSettingsStatus');
+            if (!data) {
+                status.innerHTML = '<span class="text-danger">加载模式配置失败</span>';
+                return;
+            }
+            currentModeConfig = data;
+            document.getElementById('useSimulatedDevicesSwitch').checked = !!data.use_simulated_devices;
+            renderModeConfigPanels(data);
+            status.innerHTML = '<span class="text-success"><i class="bi bi-check-circle me-1"></i>模式配置已同步</span>';
+        }
+
+        function renderModeConfigPanels(config) {
+            const container = document.getElementById('modeConfigPanels');
+            const order = ['manual_override', 'safe_hold', 'business_normal', 'export_protect'];
+            const modes = Object.values(config?.modes || {}).sort((a, b) => {
+                const left = order.indexOf(a.name);
+                const right = order.indexOf(b.name);
+                return (left === -1 ? 999 : left) - (right === -1 ? 999 : right);
+            });
+
+            if (modes.length === 0) {
+                container.innerHTML = '<div class="alert alert-info mb-0">当前没有可展示的模式配置。</div>';
+                return;
+            }
+
+            let html = '';
+            for (const mode of modes) {
+                const fields = mode.fields || [];
+                const settings = mode.settings || {};
+                const editable = !!mode.configurable;
+                html += `
+                    <div class="border rounded-4 p-3 bg-light-subtle">
+                        <div class="d-flex flex-column flex-lg-row justify-content-between gap-2 mb-3">
+                            <div>
+                                <div class="fw-bold">${mode.label || mode.name}</div>
+                                <div class="section-note">${mode.description || '当前模式没有额外说明。'}</div>
+                            </div>
+                            <div class="d-flex gap-2 align-items-center flex-wrap">
+                                ${mode.enabled ? '<span class="pill-soft pill-success">已启用</span>' : '<span class="pill-soft pill-danger">已禁用</span>'}
+                                ${editable ? '<span class="pill-soft pill-info">可配置</span>' : '<span class="pill-soft pill-secondary">固定模式</span>'}
+                            </div>
+                        </div>
+                `;
+
+                if (mode.toggleable) {
+                    html += `
+                        <div class="form-check form-switch mb-3">
+                            <input class="form-check-input" type="checkbox" role="switch" id="mode-toggle-${mode.name}" data-mode-toggle="${mode.name}" ${mode.enabled ? 'checked' : ''}>
+                            <label class="form-check-label fw-bold" for="mode-toggle-${mode.name}">启用${mode.label || mode.name}</label>
+                        </div>
+                    `;
+                }
+
+                if (fields.length === 0) {
+                    html += '<div class="alert alert-secondary mb-0">当前模式没有可编辑参数。</div>';
+                } else {
+                    html += '<div class="row g-3">';
+                    for (const field of fields) {
+                        const fieldId = `mode-field-${mode.name}-${field.key}`;
+                        const value = settings[field.key];
+                        if (field.type === 'boolean') {
+                            html += `
+                                <div class="col-12">
+                                    <div class="form-check form-switch mt-1">
+                                        <input class="form-check-input" type="checkbox" role="switch" id="${fieldId}" data-mode-field="${mode.name}:${field.key}" data-field-type="boolean" ${value ? 'checked' : ''} ${editable ? '' : 'disabled'}>
+                                        <label class="form-check-label fw-bold" for="${fieldId}">${field.label}</label>
+                                    </div>
+                                    ${field.description ? `<div class="section-note mt-1">${field.description}</div>` : ''}
+                                </div>
+                            `;
+                        } else {
+                            html += `
+                                <div class="col-md-6">
+                                    <label class="form-label fw-bold" for="${fieldId}">${field.label}</label>
+                                    <input
+                                        type="number"
+                                        class="form-control"
+                                        id="${fieldId}"
+                                        data-mode-field="${mode.name}:${field.key}"
+                                        data-field-type="${field.type || 'number'}"
+                                        value="${value ?? ''}"
+                                        ${field.min !== undefined ? `min="${field.min}"` : ''}
+                                        ${field.max !== undefined ? `max="${field.max}"` : ''}
+                                        ${field.step !== undefined ? `step="${field.step}"` : ''}
+                                        ${editable ? '' : 'disabled'}
+                                    >
+                                    ${field.description ? `<div class="section-note mt-1">${field.description}</div>` : ''}
+                                </div>
+                            `;
+                        }
+                    }
+                    html += '</div>';
+                }
+
+                html += '</div>';
+            }
+
+            container.innerHTML = html;
+        }
+
+        async function saveModeConfig() {
+            const status = document.getElementById('controlSettingsStatus');
+            status.innerHTML = '<span class="text-muted"><div class="spinner-border spinner-border-sm me-2"></div>保存中...</span>';
+            const modesPayload = {};
+            const modes = currentModeConfig?.modes || {};
+
+            for (const mode of Object.values(modes)) {
+                const entry = {};
+                if (mode.toggleable) {
+                    const toggle = document.querySelector(`[data-mode-toggle="${mode.name}"]`);
+                    if (toggle) {
+                        entry.enabled = toggle.checked;
+                    }
+                }
+
+                const fields = mode.fields || [];
+                if (fields.length > 0) {
+                    entry.settings = {};
+                    for (const field of fields) {
+                        const input = document.querySelector(`[data-mode-field="${mode.name}:${field.key}"]`);
+                        if (!input) continue;
+                        if (field.type === 'boolean') {
+                            entry.settings[field.key] = input.checked;
+                        } else {
+                            entry.settings[field.key] = Number(input.value);
+                        }
+                    }
+                }
+
+                if (Object.keys(entry).length > 0) {
+                    modesPayload[mode.name] = entry;
+                }
+            }
+
+            const payload = {
+                use_simulated_devices: document.getElementById('useSimulatedDevicesSwitch').checked,
+                modes: modesPayload
+            };
+            const result = await postJSON('/api/modes/config', payload);
+            if (!result || !result.success) {
+                status.innerHTML = '<span class="text-danger"><i class="bi bi-x-circle me-1"></i>保存失败</span>';
+                return;
+            }
+            status.innerHTML = '<span class="text-success"><i class="bi bi-check-circle me-1"></i>模式配置已更新</span>';
+            await Promise.all([loadModeConfig(), loadModeSummary()]);
+        }
+
+        async function loadSimulationScenarios() {
+            const data = await fetchJSON('/api/simulation/scenarios');
+            const card = document.getElementById('simulationScenarioCard');
+            const current = document.getElementById('simulationScenarioCurrent');
+            const select = document.getElementById('simulationScenarioSelect');
+            const status = document.getElementById('simulationScenarioStatus');
+            if (!data || !data.enabled) {
+                card.style.display = 'none';
+                return;
+            }
+            card.style.display = 'block';
+            current.textContent = data.current || '未启用';
+            const scenarios = data.scenarios || [];
+            select.innerHTML = scenarios.map((scenario) => `<option value="${scenario}" ${scenario === data.current ? 'selected' : ''}>${scenario}</option>`).join('');
+            status.textContent = `当前可切换 ${scenarios.length} 个仿真场景，切换后会刷新候选设备。`;
+        }
+
+        async function applySimulationScenario() {
+            const scenario = document.getElementById('simulationScenarioSelect').value;
+            const status = document.getElementById('simulationScenarioStatus');
+            status.textContent = '场景切换中...';
+            const result = await postJSON('/api/simulation/scenario', { scenario });
+            if (!result || !result.success) {
+                status.textContent = result?.message || '场景切换失败';
+                return;
+            }
+            status.textContent = `已切换到 ${result.current}，候选设备已刷新。`;
+            await Promise.all([loadSimulationScenarios(), loadDeviceCandidates(), loadConnectedDevices(), loadModeSummary()]);
+        }
+
+        async function testModbusConnection() {
+            const result = await postJSON('/api/devices/test-modbus', {
+                host: document.getElementById('modbusHost').value,
+                port: Number(document.getElementById('modbusPort').value),
+                unit_id: Number(document.getElementById('modbusUnitId').value),
+                model: document.getElementById('deviceModel').value || 'generic_charger'
+            });
+            const container = document.getElementById('testResult');
+            container.innerHTML = result && result.success
+                ? `<div class="alert alert-success mb-0">连接成功，测试值: <code>${result.test_value}</code></div>`
+                : `<div class="alert alert-danger mb-0">连接失败: ${result?.message || '未知错误'}</div>`;
+        }
+
+        async function loadDeviceCandidates() {
+            const data = await fetchJSON('/api/devices/candidates');
+            const container = document.getElementById('candidateDeviceList');
+            if (!data) {
+                container.innerHTML = '<div class="alert alert-danger mb-0">加载候选设备失败</div>';
+                return;
+            }
+            candidateDevices = data;
+            if (data.length === 0) {
+                container.innerHTML = '<div class="alert alert-info mb-0">当前没有候选设备。</div>';
+                return;
+            }
+            let html = '<div class="table-responsive"><table class="table table-hover"><thead><tr><th>设备ID</th><th>类型</th><th>来源</th><th>接入方式</th><th>状态</th><th>操作</th></tr></thead><tbody>';
+            for (const device of data) {
+                const connectDisabled = device.connected ? 'disabled' : '';
+                const deleteDisabled = device.connected ? 'disabled' : '';
+                const connectTitle = device.connected ? '该设备已在当前设备列表中' : '将候选设备接入当前系统';
+                const deleteTitle = device.connected ? '已接入设备不能直接从候选中删除，请先断开' : '删除候选设备';
+                const connectedHint = device.connected ? '<span class="pill-soft pill-info ms-2">已接入</span>' : '';
+                html += `<tr><td><code>${device.device_id}</code>${connectedHint}</td><td>${device.type || '-'}</td><td>${sourceBadge(device.source)}</td><td>${device.protocol || '-'}</td><td>${statusBadge(device.status)}</td><td><button class="btn btn-sm btn-outline-success me-1" ${connectDisabled} title="${connectTitle}" onclick="activateCandidateDevice('${device.device_id}')">接入</button><button class="btn btn-sm btn-outline-danger" ${deleteDisabled} title="${deleteTitle}" onclick="deleteCandidateDevice('${device.device_id}')">删除</button></td></tr>`;
+            }
+            html += '</tbody></table></div>';
+            container.innerHTML = html;
+        }
+
+        async function activateCandidateDevice(deviceId) {
+            const result = await postJSON(`/api/devices/candidates/${deviceId}/activate`, {});
+            if (!result || !result.success) {
+                alert(result?.message || '接入失败');
+                return;
+            }
+            await Promise.all([loadDeviceCandidates(), loadConnectedDevices(), loadModeSummary()]);
+        }
+
+        async function deleteCandidateDevice(deviceId) {
+            const result = await deleteJSON(`/api/devices/candidates/${deviceId}`);
+            if (!result || !result.success) {
+                alert(result?.message || '删除失败');
+                return;
+            }
+            await Promise.all([loadDeviceCandidates(), loadModeSummary()]);
+        }
+
+        async function loadConnectedDevices() {
+            const data = await fetchJSON('/api/devices/connected');
+            const container = document.getElementById('connectedDeviceList');
+            if (!data) {
+                container.innerHTML = '<div class="alert alert-danger mb-0">加载当前设备失败</div>';
+                return;
+            }
+            connectedDevices = data;
+            if (data.length === 0) {
+                container.innerHTML = '<div class="alert alert-info mb-0">当前没有已接入设备，请先从候选设备中接入。</div>';
+                return;
+            }
+            let html = '<div class="table-responsive"><table class="table table-hover"><thead><tr><th>设备ID</th><th>类型</th><th>来源</th><th>接入方式</th><th>状态</th><th>操作</th></tr></thead><tbody>';
+            for (const device of data) {
+                html += `<tr><td><code>${device.device_id}</code></td><td>${device.type || '-'}</td><td>${sourceBadge(device.source)}</td><td>${device.protocol || '-'}</td><td>${statusBadge(device.status)}</td><td><a class="btn btn-sm btn-outline-secondary me-1" href="/api/devices/${device.device_id}" target="_blank">详情</a><button class="btn btn-sm btn-outline-warning" onclick="disconnectConnectedDevice('${device.device_id}')">断开</button></td></tr>`;
+            }
+            html += '</tbody></table></div>';
+            container.innerHTML = html;
+        }
+
+        async function disconnectConnectedDevice(deviceId) {
+            const result = await deleteJSON(`/api/devices/${deviceId}`);
+            if (!result || !result.success) {
+                alert(result?.message || '断开失败');
+                return;
+            }
+            await Promise.all([loadConnectedDevices(), loadModeSummary()]);
+        }
+
         async function loadCollectorStatus() {
             const data = await fetchJSON('/api/collector');
             const container = document.getElementById('collectorStatus');
             if (!data) {
-                container.innerHTML = '<div class="alert alert-danger">加载失败</div>';
+                container.innerHTML = '<div class="alert alert-danger mb-0">加载失败</div>';
+                return;
+            }
+            latestCollectorSummary = data;
+            const entries = Object.entries(data);
+            if (entries.length === 0) {
+                container.innerHTML = '<div class="alert alert-info mb-0">当前没有采集器摘要数据。</div>';
+                renderCollectorPulse();
                 return;
             }
             let html = '<div class="table-responsive"><table class="table table-sm">';
-            for (const [key, value] of Object.entries(data)) {
-                html += '<tr><th width="40%">' + key + '</th><td><code>' + JSON.stringify(value) + '</code></td></tr>';
-            }
+            for (const [key, value] of entries) html += `<tr><th width="35%">${key}</th><td><code>${JSON.stringify(value)}</code></td></tr>`;
             html += '</table></div>';
             container.innerHTML = html;
+            renderCollectorPulse();
+            scheduleAutoRefresh();
         }
-        
+
         async function loadDatabaseStats() {
             const data = await fetchJSON('/api/database');
             const container = document.getElementById('databaseStats');
             if (!data) {
-                container.innerHTML = '<div class="alert alert-danger">加载失败</div>';
-                document.getElementById('dataPoints').textContent = '0';
+                container.innerHTML = '<div class="alert alert-danger mb-0">加载失败</div>';
                 return;
             }
-            let html = '<div class="table-responsive"><table class="table table-sm table-striped">';
-            html += '<thead><tr><th>设备</th><th>数据点数</th></tr></thead><tbody>';
+            const entries = Object.entries(data);
+            if (entries.length === 0) {
+                container.innerHTML = '<div class="alert alert-info mb-0">当前数据库中还没有采集记录。</div>';
+                return;
+            }
             let total = 0;
-            let hasData = false;
-            for (const [device, count] of Object.entries(data)) {
-                const safeCount = typeof count === 'number' ? count : 0;
-                html += '<tr><td><i class="bi bi-hdd me-2"></i>' + device + '</td><td>' + safeCount + '</td></tr>';
+            let html = '<div class="table-responsive"><table class="table table-hover"><thead><tr><th>设备</th><th>历史记录数</th></tr></thead><tbody>';
+            for (const [deviceId, count] of entries) {
+                const safeCount = Number(count || 0);
                 total += safeCount;
-                hasData = true;
+                html += `<tr><td><code>${deviceId}</code></td><td>${safeCount}</td></tr>`;
             }
-            if (!hasData) {
-                html += '<tr><td colspan="2" class="text-center text-muted">暂无数据</td></tr>';
-            }
-            html += '</tbody><tfoot><tr class="fw-bold"><td>总计</td><td>' + total + '</td></tr></tfoot></table></div>';
-            container.innerHTML = html;
-            document.getElementById('dataPoints').textContent = total;
-        }
-        
-        // 【新增】全局存储设备列表
-        let connectedDevices = [];
-        
-        async function loadConnectedDevices() {
-            const data = await fetchJSON('/api/devices/connected');
-            const container = document.getElementById('connectedDeviceList');
-            
-            if (!data) {
-                container.innerHTML = '<div class="alert alert-danger">加载失败</div>';
-                return;
-            }
-            
-            // 【新增】存储设备列表
-            connectedDevices = data;
-            
-            document.getElementById('connectedDeviceCount').textContent = data.length;
-            
-            if (data.length === 0) {
-                container.innerHTML = '<div class="alert alert-info text-center">暂无已连接设备，请先在"添加设备"页面添加</div>';
-                document.getElementById('deviceDetailCard').style.display = 'none';
-                return;
-            }
-            
-            let html = '<div class="table-responsive"><table class="table table-hover">';
-            html += '<thead><tr><th>设备ID</th><th>类型</th><th>型号</th><th>地址</th><th>状态</th><th>操作</th></tr></thead><tbody>';
-            
-            for (const device of data) {
-                const statusBadge = device.status === 'online' 
-                    ? '<span class="badge bg-success"><i class="bi bi-check-circle me-1"></i>在线</span>'
-                    : '<span class="badge bg-danger"><i class="bi bi-x-circle me-1"></i>离线</span>';
-                
-                // 【新增】型号标签
-                const modelBadge = device.model 
-                    ? '<span class="badge bg-info">' + device.model + '</span>' 
-                    : '<span class="text-muted">-</span>';
-                
-                html += '<tr>';
-                html += '<td><code>' + device.device_id + '</code></td>';
-                html += '<td><span class="badge bg-secondary">' + (device.type || '-') + '</span></td>';
-                html += '<td>' + modelBadge + '</td>';  // 【新增】型号列
-                html += '<td><code>' + device.host + ':' + device.port + '</code></td>';
-                html += '<td>' + statusBadge + '</td>';
-                html += '<td>';
-                html += '<button class="btn btn-sm btn-outline-primary me-1" onclick="selectDevice(\'' + device.device_id + '\')"><i class="bi bi-tools"></i> 操作</button>';
-                html += '<button class="btn btn-sm btn-outline-danger" onclick="deleteDevice(\'' + device.device_id + '\')"><i class="bi bi-trash"></i></button>';
-                html += '</td></tr>';
-            }
-            
-            html += '</tbody></table></div>';
+            html += `</tbody><tfoot><tr class="fw-bold"><td>总计</td><td>${total}</td></tr></tfoot></table></div>`;
             container.innerHTML = html;
         }
-        
-        // 【新增】根据型号生成寄存器快速访问表格
-        function updateQuickAccessTable(deviceModel) {
-            const tbody = document.getElementById('quickAccessBody');
-            
-            // 寄存器定义（地址 -> 描述）
-            let registers = [];
-            
-            if (deviceModel && deviceModel.startsWith('xj_')) {
-                // 许继型号
-                registers = [
-                    {addr: '0x1000', dec: 4096, name: '枪个数', unit: '个', scale: 1},
-                    {addr: '0x1001', dec: 4097, name: '最大功率', unit: 'kW', scale: 1},
-                    {addr: '0x2000', dec: 8192, name: '枪1-状态', unit: '-', scale: 1},
-                    {addr: '0x2010', dec: 8208, name: '枪1-电压', unit: 'V', scale: 0.1},
-                    {addr: '0x2011', dec: 8209, name: '枪1-电流', unit: 'A', scale: 0.01},
-                    {addr: '0x200E', dec: 8206, name: '枪1-功率', unit: 'kW', scale: 0.001},
-                    {addr: '0x2012', dec: 8210, name: '枪1-SOC', unit: '%', scale: 1},
-                    {addr: '0x2013', dec: 8211, name: '枪1-温度', unit: '°C', scale: 1},
-                    {addr: '0x2100', dec: 8448, name: '枪2-状态', unit: '-', scale: 1},
-                ];
-            } else {
-                // 通用型号
-                registers = [
-                    {addr: '0', dec: 0, name: '电压', unit: 'V', scale: 0.1},
-                    {addr: '1', dec: 1, name: '电流', unit: 'A', scale: 0.1},
-                    {addr: '2', dec: 2, name: '功率', unit: 'W', scale: 1},
-                    {addr: '3', dec: 3, name: '累计能量', unit: 'kWh', scale: 0.01},
-                    {addr: '4', dec: 4, name: '温度', unit: '°C', scale: 0.1},
-                    {addr: '5', dec: 5, name: '状态', unit: '-', scale: 1},
-                ];
-            }
-            
-            // 保存到全局，供后续使用
-            window.currentRegisters = registers;
-            
-            // 生成快速访问表格（带数值列）
-            let html = '';
-            registers.forEach((reg, idx) => {
-                html += `<tr id="reg-row-${idx}">
-                    <td><code>${reg.addr}</code></td>
-                    <td>${reg.name}</td>
-                    <td>${reg.unit}</td>
-                    <td><button class="btn btn-sm btn-outline-primary device-action-btn" onclick="quickRead(${reg.dec}, ${idx})">读取</button></td>
-                    <td class="reg-value text-muted" id="reg-value-${idx}">-</td>
-                </tr>`;
-            });
-            tbody.innerHTML = html;
-            
-            // 同时更新读取/写入下拉框
-            updateRegisterSelects(registers);
+
+        function renderSnapshotFields(snapshot) {
+            const data = snapshot.data || {};
+            const keys = Object.keys(data).slice(0, 5);
+            if (keys.length === 0) return '<span class="text-muted">无数据</span>';
+            return keys.map((key) => `<span class="pill-soft pill-secondary me-1">${key}: ${data[key]}</span>`).join('');
         }
-        
-        // 【新增】更新读取/写入寄存器下拉框
-        function updateRegisterSelects(registers) {
-            const readSelect = document.getElementById('readRegister');
-            const writeSelect = document.getElementById('writeRegister');
-            
-            let options = '<option value="">请选择...</option>';
-            registers.forEach(reg => {
-                options += `<option value="${reg.dec}" data-desc="${reg.name} (${reg.unit})">${reg.addr} - ${reg.name}</option>`;
-            });
-            
-            readSelect.innerHTML = options;
-            writeSelect.innerHTML = options;
-            
-            // 读取下拉框改变时更新描述
-            readSelect.addEventListener('change', function() {
-                const option = this.options[this.selectedIndex];
-                document.getElementById('readRegisterDesc').textContent = option.dataset.desc || '选择要读取的寄存器';
-            });
-        }
-        
-        function selectDevice(deviceId) {
-            currentDeviceId = deviceId;
-            document.getElementById('currentDeviceName').textContent = deviceId;
-            document.getElementById('deviceDetailCard').style.display = 'block';
-            document.getElementById('readResult').innerHTML = '';
-            document.getElementById('writeResult').innerHTML = '';
-            document.getElementById('controlResult').innerHTML = '';
-            
-            // 【新增】获取设备型号并更新寄存器表格
-            const device = connectedDevices.find(d => d.device_id === deviceId);
-            if (device) {
-                updateQuickAccessTable(device.model);
-            }
-            
-            // 加载枪数据
-            document.getElementById('gunDataPanel').innerHTML = '<div class="text-center py-4"><div class="spinner-border spinner-border-sm"></div><p class="mt-2">加载中...</p></div>';
-            loadGunData();
-        }
-        
-        async function deleteDevice(deviceId) {
-            if (!confirm('确定要删除设备 ' + deviceId + ' 吗？')) return;
-            
-            const result = await fetchJSON('/api/devices/' + deviceId, { method: 'DELETE' });
-            if (result && result.success) {
-                alert('设备已删除');
-                loadConnectedDevices();
-                if (currentDeviceId === deviceId) {
-                    document.getElementById('deviceDetailCard').style.display = 'none';
-                    currentDeviceId = null;
-                }
-            } else {
-                alert('删除失败: ' + (result ? result.message : '未知错误'));
-            }
-        }
-        
-        // 【新增】加载枪数据
-        async function loadGunData() {
-            if (!currentDeviceId) return;
-            
-            const gunId = document.getElementById('gunSelector').value;
-            const panel = document.getElementById('gunDataPanel');
-            
-            panel.innerHTML = '<div class="text-center py-4"><div class="spinner-border spinner-border-sm"></div><p class="mt-2">加载中...</p></div>';
-            
-            const result = await fetchJSON(`/api/devices/${currentDeviceId}/gun-data?gun_id=${gunId}`);
-            
-            if (!result || !result.success) {
-                panel.innerHTML = '<div class="alert alert-warning">' + (result ? result.message : '加载失败') + '</div>';
-                return;
-            }
-            
-            const data = result.data;
-            
-            // 状态码映射
-            const stateMap = {
-                0: { text: '空闲', class: 'badge bg-secondary' },
-                1: { text: '已连接', class: 'badge bg-info' },
-                2: { text: '启动中', class: 'badge bg-warning' },
-                3: { text: '充电中', class: 'badge bg-success' },
-                4: { text: '已完成', class: 'badge bg-primary' },
-                5: { text: '故障', class: 'badge bg-danger' }
-            };
-            
-            let html = '<div class="table-responsive"><table class="table table-sm">';
-            html += '<thead><tr><th>参数</th><th>数值</th><th>原始值</th></tr></thead><tbody>';
-            
-            for (const [key, item] of Object.entries(data)) {
-                if (key === 'gun_id' || key === 'model') continue;
-                
-                if (item && item.value !== undefined && item.value !== null) {
-                    let displayValue = item.value;
-                    let unit = item.unit || '';
-                    
-                    // 状态特殊显示
-                    if (key === 'state' && stateMap[item.value]) {
-                        const state = stateMap[item.value];
-                        displayValue = `<span class="${state.class}">${state.text}</span>`;
-                        unit = '';
-                    }
-                    
-                    html += `<tr>
-                        <td><code>${key}</code></td>
-                        <td>${displayValue} ${unit}</td>
-                        <td class="text-muted">${item.raw}</td>
-                    </tr>`;
-                } else {
-                    html += `<tr>
-                        <td><code>${key}</code></td>
-                        <td class="text-danger">读取失败</td>
-                        <td class="text-muted">-</td>
-                    </tr>`;
-                }
-            }
-            
-            html += '</tbody></table></div>';
-            panel.innerHTML = html;
-        }
-        
-        // 【新增】滑块值更新显示
-        document.getElementById('powerLimitSlider').addEventListener('input', function() {
-            document.getElementById('powerLimitValue').textContent = this.value;
-        });
-        
-        document.getElementById('targetSocSlider').addEventListener('input', function() {
-            document.getElementById('targetSocValue').textContent = this.value;
-        });
-        
-        // 【新增】设备控制
-        async function controlDevice(action) {
-            if (!currentDeviceId) {
-                alert('请先选择设备');
-                return;
-            }
-            
-            const gunId = parseInt(document.getElementById('gunSelector').value);
-            const resultDiv = document.getElementById('controlResult');
-            
-            // 构建参数
-            const params = {};
-            if (action === 'set_power' || action === 'start_charging') {
-                // 开始充电时自动设置功率限制
-                params.power_kw = parseInt(document.getElementById('powerLimitSlider').value);
-            }
-            if (action === 'set_soc' || action === 'start_charging') {
-                // 开始充电时自动设置目标SOC
-                params.target_soc = parseInt(document.getElementById('targetSocSlider').value);
-            }
-            
-            resultDiv.innerHTML = '<div class="text-center"><div class="spinner-border spinner-border-sm"></div> 执行中...</div>';
-            
-            const result = await postJSON(`/api/devices/${currentDeviceId}/control`, {
-                action: action,
-                gun_id: gunId,
-                params: params
-            });
-            
-            if (result && result.success) {
-                resultDiv.innerHTML = '<div class="alert alert-success alert-sm py-2"><i class="bi bi-check-circle-fill me-1"></i>操作成功</div>';
-                // 延迟刷新枪数据
-                setTimeout(loadGunData, 500);
-            } else {
-                resultDiv.innerHTML = '<div class="alert alert-danger alert-sm py-2"><i class="bi bi-x-circle-fill me-1"></i>' + (result ? result.message : '操作失败') + '</div>';
-            }
-            
-            // 3秒后清除提示
-            setTimeout(() => {
-                resultDiv.innerHTML = '';
-            }, 3000);
-        }
-        
-        async function testModbusConnection() {
-            const host = document.getElementById('modbusHost').value;
-            const port = parseInt(document.getElementById('modbusPort').value);
-            const unitId = parseInt(document.getElementById('modbusUnitId').value);
-            const deviceModel = document.getElementById('deviceModel').value;  // 【新增】型号
-            
-            const resultDiv = document.getElementById('testResult');
-            resultDiv.innerHTML = '<div class="text-center"><div class="spinner-border spinner-border-sm"></div> 测试中...</div>';
-            
-            const result = await postJSON('/api/devices/test-modbus', { 
-                host, 
-                port, 
-                unit_id: unitId,
-                model: deviceModel  // 【新增】型号
-            });
-            
-            if (result && result.success) {
-                resultDiv.innerHTML = '<div class="alert alert-success"><i class="bi bi-check-circle-fill me-2"></i>' + result.message + ' (测试值: ' + result.test_value + ')</div>';
-            } else {
-                resultDiv.innerHTML = '<div class="alert alert-danger"><i class="bi bi-x-circle-fill me-2"></i>' + (result ? result.message : '连接失败') + '</div>';
-            }
-        }
-        
-        document.getElementById('addDeviceForm').addEventListener('submit', async function(e) {
-            e.preventDefault();
-            
-            const deviceId = document.getElementById('deviceId').value;
-            const deviceType = document.getElementById('deviceType').value;
-            const deviceModel = document.getElementById('deviceModel').value;  // 【新增】型号
-            const host = document.getElementById('modbusHost').value;
-            const port = parseInt(document.getElementById('modbusPort').value);
-            const unitId = parseInt(document.getElementById('modbusUnitId').value);
-            
-            const result = await postJSON('/api/devices/add-modbus', { 
-                device_id: deviceId, 
-                device_type: deviceType, 
-                model: deviceModel,  // 【新增】型号
-                host, 
-                port, 
-                unit_id: unitId 
-            });
-            
-            if (result && result.success) {
-                alert('设备添加成功！');
-                this.reset();
-                loadConnectedDevices();
-                const tabTrigger = new bootstrap.Tab(document.getElementById('device-mgr-tab'));
-                tabTrigger.show();
-            } else {
-                alert('添加失败: ' + (result ? result.message : '未知错误'));
-            }
-        });
-        
-        async function readRegister(updateTableIdx = null) {
-            if (!currentDeviceId) {
-                alert('请先选择设备');
-                return;
-            }
-            
-            const register = document.getElementById('readRegister').value;
-            if (!register) {
-                alert('请选择寄存器地址');
-                return;
-            }
-            
-            const result = await postJSON('/api/devices/' + currentDeviceId + '/read-register', { register });
-            
-            const resultDiv = document.getElementById('readResult');
-            if (result && result.success) {
-                resultDiv.innerHTML = '<div class="alert alert-success"><i class="bi bi-check-circle-fill me-2"></i>寄存器 ' + register + ' = <strong>' + result.value + '</strong></div>';
-                
-                // 【新增】如果指定了表格索引，更新表格中的数值
-                if (updateTableIdx !== null && window.currentRegisters) {
-                    const reg = window.currentRegisters[updateTableIdx];
-                    const scaledValue = result.value * reg.scale;
-                    document.getElementById('reg-value-' + updateTableIdx).innerHTML = 
-                        '<span class="text-success fw-bold">' + scaledValue.toFixed(reg.scale < 1 ? 2 : 0) + ' ' + reg.unit + '</span>';
-                }
-            } else {
-                resultDiv.innerHTML = '<div class="alert alert-danger"><i class="bi bi-x-circle-fill me-2"></i>读取失败: ' + (result ? result.message : '未知错误') + '</div>';
-            }
-        }
-        
-        async function writeRegister() {
-            if (!currentDeviceId) {
-                alert('请先选择设备');
-                return;
-            }
-            
-            const register = document.getElementById('writeRegister').value;
-            if (!register) {
-                alert('请选择寄存器地址');
-                return;
-            }
-            
-            const value = parseInt(document.getElementById('writeValue').value);
-            
-            const result = await postJSON('/api/devices/' + currentDeviceId + '/write-register', { register, value });
-            
-            const resultDiv = document.getElementById('writeResult');
-            if (result && result.success) {
-                resultDiv.innerHTML = '<div class="alert alert-success"><i class="bi bi-check-circle-fill me-2"></i>写入成功！</div>';
-            } else {
-                resultDiv.innerHTML = '<div class="alert alert-danger"><i class="bi bi-x-circle-fill me-2"></i>写入失败: ' + (result ? result.message : '未知错误') + '</div>';
-            }
-        }
-        
-        // 【修改】支持更新表格
-        function quickRead(register, tableIdx = null) {
-            document.getElementById('readRegister').value = register;
-            readRegister(tableIdx);
-        }
-        
-        async function loadStrategies() {
-            const data = await fetchJSON('/api/strategies');
-            const container = document.getElementById('strategyList');
+
+        async function loadLiveSnapshots() {
+            const data = await fetchJSON('/api/collector/latest');
+            const container = document.getElementById('liveSnapshotList');
             if (!data) {
-                container.innerHTML = '<div class="alert alert-danger">加载失败</div>';
+                container.innerHTML = '<div class="alert alert-danger mb-0">加载失败</div>';
                 return;
             }
             if (data.length === 0) {
-                container.innerHTML = '<div class="alert alert-info text-center">暂无策略</div>';
+                container.innerHTML = '<div class="alert alert-info mb-0">当前没有实时快照。</div>';
                 return;
             }
-            let html = '<div class="table-responsive"><table class="table table-hover">';
-            html += '<thead><tr><th>策略名称</th><th>状态</th><th>操作</th></tr></thead><tbody>';
-            for (const strategy of data) {
-                html += '<tr>';
-                html += '<td><i class="bi bi-gear me-2"></i><strong>' + (strategy.name || '-') + '</strong></td>';
-                html += '<td><span class="badge bg-primary">已加载</span></td>';
-                html += '<td><a href="/api/strategies/' + strategy.name + '" class="btn btn-sm btn-outline-primary" target="_blank"><i class="bi bi-eye"></i></a></td></tr>';
+            let html = '<div class="table-responsive"><table class="table table-hover"><thead><tr><th>设备ID</th><th>类型</th><th>最新值</th><th>时间</th></tr></thead><tbody>';
+            for (const snapshot of data) {
+                html += `<tr><td><code>${snapshot.device_id}</code></td><td>${snapshot.device_type || '-'}</td><td>${renderSnapshotFields(snapshot)}</td><td>${snapshot.timestamp || '-'}</td></tr>`;
             }
             html += '</tbody></table></div>';
             container.innerHTML = html;
         }
-        
+
+        function renderCollectorPulse() {
+            const intervalSeconds = Number(latestCollectorSummary?.collect_interval || 0);
+            const latestTimestamp = latestModeSummary?.key_measurements?.timestamp || null;
+            const intervalLabel = intervalSeconds > 0 ? `${intervalSeconds}s` : '-';
+            document.getElementById('collectorIntervalValue').textContent = intervalLabel;
+            document.getElementById('collectorLatestValue').textContent = latestTimestamp || '-';
+
+            const countdownNode = document.getElementById('collectorCountdownValue');
+            const stateNode = document.getElementById('collectorPulseState');
+
+            if (!latestTimestamp || intervalSeconds <= 0) {
+                countdownNode.textContent = '-';
+                stateNode.innerHTML = '<span class="pill-soft pill-secondary">等待首轮采集</span>';
+                return;
+            }
+
+            const latestMs = Date.parse(latestTimestamp);
+            const elapsedSeconds = Math.max(0, Math.floor((Date.now() - latestMs) / 1000));
+            const countdown = Math.max(intervalSeconds - elapsedSeconds, 0);
+            countdownNode.textContent = `${countdown}s`;
+
+            if (elapsedSeconds > intervalSeconds * 2) {
+                stateNode.innerHTML = '<span class="pill-soft pill-danger">数据可能滞后</span>';
+            } else if (elapsedSeconds >= intervalSeconds) {
+                stateNode.innerHTML = '<span class="pill-soft pill-warning">等待下一轮采集</span>';
+            } else {
+                stateNode.innerHTML = '<span class="pill-soft pill-info">采集节奏正常</span>';
+            }
+        }
+
+        function startCollectorTicker() {
+            if (collectorTickerHandle) {
+                clearInterval(collectorTickerHandle);
+            }
+            collectorTickerHandle = setInterval(() => {
+                renderCollectorPulse();
+            }, 1000);
+        }
+
+        function scheduleAutoRefresh() {
+            const intervalSeconds = Number(latestCollectorSummary?.collect_interval || 10);
+            const refreshMs = Math.max(5000, intervalSeconds * 1000);
+            if (autoRefreshHandle) {
+                clearInterval(autoRefreshHandle);
+            }
+            autoRefreshHandle = setInterval(() => {
+                refreshAllData();
+            }, refreshMs);
+        }
+
         async function refreshAllData() {
+            if (refreshInFlight) {
+                return;
+            }
+            refreshInFlight = true;
             await Promise.all([
-                loadSystemStatus(),
+                loadRuntimeStatus(),
+                loadModeSummary(),
+                loadModeConfig(),
+                loadSimulationScenarios(),
+                loadDeviceCandidates(),
+                loadConnectedDevices(),
                 loadCollectorStatus(),
                 loadDatabaseStats(),
-                loadConnectedDevices(),
-                loadStrategies()
+                loadLiveSnapshots()
             ]);
+            refreshInFlight = false;
         }
-        
-        document.addEventListener('DOMContentLoaded', function() {
+
+        document.addEventListener('DOMContentLoaded', function () {
+            document.getElementById('addDeviceForm').addEventListener('submit', async function (event) {
+                event.preventDefault();
+                const result = await postJSON('/api/devices/add-modbus', {
+                    device_id: document.getElementById('deviceId').value,
+                    device_type: document.getElementById('deviceType').value,
+                    model: document.getElementById('deviceModel').value,
+                    host: document.getElementById('modbusHost').value,
+                    port: Number(document.getElementById('modbusPort').value),
+                    unit_id: Number(document.getElementById('modbusUnitId').value)
+                });
+                const container = document.getElementById('testResult');
+                if (result && result.success) {
+                    container.innerHTML = `<div class="alert alert-success mb-0">${result.message}</div>`;
+                    document.getElementById('addDeviceForm').reset();
+                    document.getElementById('modbusHost').value = 'localhost';
+                    document.getElementById('modbusPort').value = '502';
+                    document.getElementById('modbusUnitId').value = '1';
+                    await Promise.all([loadDeviceCandidates(), loadModeSummary()]);
+                } else {
+                    container.innerHTML = `<div class="alert alert-danger mb-0">${result?.message || '添加失败'}</div>`;
+                }
+            });
+            startCollectorTicker();
             refreshAllData();
         });
     </script>

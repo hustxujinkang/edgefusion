@@ -4,6 +4,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 
 
+def assert_contains_any(content: str, *patterns: str):
+    assert any(pattern in content for pattern in patterns), patterns
+
+
 def test_service_template_is_named_as_template():
     assert (ROOT / "edgefusion.service.template").exists()
     assert not (ROOT / "edgefusion.service").exists()
@@ -42,13 +46,15 @@ def test_run_local_script_bootstraps_local_environment_and_uses_project_local_pa
     content = run_local.read_text(encoding="utf-8")
 
     assert "python3.10 python3.11 python3.12 python3" in content
-    assert '"$PYTHON_BIN" -m venv .venv' in content
-    assert '.venv/bin/python -m pip install -r "$REQ_FILE"' in content
+    assert 'readonly VENV_DIR="$PROJECT_DIR/.venv"' in content
+    assert 'readonly VENV_PYTHON="$VENV_DIR/bin/python"' in content
+    assert_contains_any(content, '"$PYTHON_BIN" -m venv .venv', '"$PYTHON_BIN" -m venv "$VENV_DIR"')
+    assert_contains_any(content, '.venv/bin/python -m pip install -r "$REQ_FILE"', '"$VENV_PYTHON" -m pip install -r "$REQ_FILE"')
     assert 'REQ_FILE="${EDGEFUSION_REQUIREMENTS_FILE:-requirements.txt}"' in content
     assert "EDGEFUSION_CONFIG_FILE" in content
     assert "EDGEFUSION_LOG_DIR" in content
     assert "EDGEFUSION_DB_PATH" in content
-    assert "exec .venv/bin/python -m edgefusion.main" in content
+    assert_contains_any(content, 'exec .venv/bin/python -m edgefusion.main', 'exec "$VENV_PYTHON" -m edgefusion.main')
 
 
 def test_deploy_script_handles_production_installation_without_install_or_run_scripts():
@@ -56,8 +62,9 @@ def test_deploy_script_handles_production_installation_without_install_or_run_sc
     content = deploy_script.read_text(encoding="utf-8")
 
     assert '"$PYTHON_BIN" -m venv .venv' in content
-    assert '.venv/bin/python -m pip install -r "$REQ_FILE"' in content
-    assert 'REQ_FILE="${EDGEFUSION_REQUIREMENTS_FILE:-requirements-prod.txt}"' in content
+    assert 'local venv_python="$EDGEFUSION_APP_DIR/.venv/bin/python"' in content
+    assert_contains_any(content, '.venv/bin/python -m pip install -r "$REQ_FILE"', '"$venv_python" -m pip install -r "$req_file"')
+    assert_contains_any(content, 'REQ_FILE="${EDGEFUSION_REQUIREMENTS_FILE:-requirements-prod.txt}"', 'local req_file="${EDGEFUSION_REQUIREMENTS_FILE:-requirements-prod.txt}"')
     assert "./install.sh" not in content
     assert "$EDGEFUSION_APP_DIR/install.sh" not in content
     assert "./run.sh" not in content

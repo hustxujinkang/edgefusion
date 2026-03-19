@@ -1,19 +1,27 @@
 # 光伏模拟器
 from .base import DeviceSimulator
 import time
-import random
 
 
 class PVSimulator(DeviceSimulator):
     """光伏模拟器"""
     
-    def __init__(self, device_id: str):
+    def __init__(
+        self,
+        device_id: str,
+        available_power_w: float = 5000.0,
+        power_limit_w: float | None = None,
+        min_power_limit_w: float = 0.0,
+        enable_time_profile: bool = True,
+    ):
         """初始化光伏模拟器
         
         Args:
             device_id: 设备ID
         """
         super().__init__(device_id, "pv")
+        self.available_power_w = float(available_power_w)
+        self.enable_time_profile = enable_time_profile
         # 初始化光伏数据
         self.data = {
             'power': 0.0,  # 功率（W）
@@ -21,11 +29,14 @@ class PVSimulator(DeviceSimulator):
             'voltage': 220.0,  # 电压（V）
             'current': 0.0,  # 电流（A）
             'temperature': 25.0,  # 温度（℃）
-            'status': 'normal',  # 状态
-            'mode': 'auto'  # 模式
+            'status': 'online',  # 状态
+            'mode': 'auto',  # 模式
+            'available_power': float(available_power_w),
+            'power_limit': float(power_limit_w if power_limit_w is not None else available_power_w),
+            'min_power_limit': float(min_power_limit_w),
         }
         self.last_update_time = time.time()
-        self.max_power = 5000.0  # 最大功率（W）
+        self.max_power = float(available_power_w)
     
     def get_data(self, register: str) -> float:
         """获取光伏数据
@@ -48,8 +59,10 @@ class PVSimulator(DeviceSimulator):
         Returns:
             bool: 设置是否成功
         """
-        if register in ['mode', 'status']:
+        if register in ['mode', 'status', 'available_power', 'power_limit', 'min_power_limit']:
             self.data[register] = value
+            if register == 'available_power':
+                self.available_power_w = float(value)
             self.last_updated = time.time()
             return True
         # 其他数据点为只读
@@ -67,37 +80,27 @@ class PVSimulator(DeviceSimulator):
         self.last_update_time = current_time
         self.last_updated = current_time
         
-        # 获取当前小时
-        hour = time.localtime(current_time).tm_hour
-        
-        # 根据时间模拟光伏功率
-        if 6 <= hour < 18:
-            # 白天，有阳光
-            # 功率随时间变化，中午最高
-            noon = 12
-            power_factor = 1 - abs(hour - noon) / 6
-            base_power = self.max_power * power_factor
-            # 添加随机波动
-            power = base_power * (0.8 + 0.2 * random.random())
-            
-            # 更新功率和电流
-            self.data['power'] = round(power, 2)
-            self.data['current'] = round(power / self.data['voltage'], 2)
-            
-            # 更新能量
-            energy_increase = power * elapsed / 3600 / 1000  # 转换为kWh
-            self.data['energy'] = round(self.data['energy'] + energy_increase, 2)
-            
-            # 更新状态
-            self.data['status'] = 'normal'
+        if self.enable_time_profile:
+            hour = time.localtime(current_time).tm_hour
+            if 6 <= hour < 18:
+                noon = 12
+                power_factor = 1 - abs(hour - noon) / 6
+                available_power = self.max_power * power_factor
+            else:
+                available_power = 0.0
         else:
-            # 夜晚，无阳光
-            self.data['power'] = 0.0
-            self.data['current'] = 0.0
-            self.data['status'] = 'sleep'
-        
-        # 随机波动温度
-        self.data['temperature'] = round(20 + 10 * random.random(), 1)
+            available_power = self.available_power_w
+
+        self.data['available_power'] = round(available_power, 2)
+        power_limit = max(float(self.data['min_power_limit']), float(self.data['power_limit']))
+        actual_power = min(available_power, power_limit)
+
+        self.data['power'] = round(actual_power, 2)
+        self.data['current'] = round(actual_power / self.data['voltage'], 2) if self.data['voltage'] else 0.0
+        energy_increase = actual_power * elapsed / 3600 / 1000
+        self.data['energy'] = round(self.data['energy'] + energy_increase, 2)
+        self.data['status'] = 'online' if actual_power > 0 or available_power > 0 else 'sleep'
+        self.data['temperature'] = round(25.0 + (5.0 if actual_power > 0 else 0.0), 1)
     
     def get_power(self) -> float:
         """获取当前功率

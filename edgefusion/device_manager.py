@@ -1,6 +1,6 @@
 # 设备管理模块
 from typing import Dict, Any, List, Optional
-from .protocol import ProtocolBase, ModbusProtocol, MQTTProtocol, OCPPProtocol
+from .protocol import ProtocolBase, ModbusProtocol, MQTTProtocol, OCPPProtocol, SimulationProtocol
 from .logger import get_logger
 
 
@@ -16,8 +16,20 @@ class DeviceManager:
         self.logger = get_logger('DeviceManager')
         self.config = config
         self.devices: Dict[str, Dict[str, Any]] = {}
+        self.device_candidates: Dict[str, Dict[str, Any]] = {}
         self.protocols: Dict[str, ProtocolBase] = {}
         self._init_protocols()
+
+    def _normalize_device_info(self, device_info: Dict[str, Any]) -> Dict[str, Any]:
+        normalized = dict(device_info)
+        protocol_name = normalized.get('protocol')
+
+        if normalized.get('source') not in {'real', 'simulated'}:
+            normalized['source'] = 'simulated' if protocol_name == 'simulation' else 'real'
+
+        raw_status = str(normalized.get('status', 'online')).lower()
+        normalized['status'] = 'offline' if raw_status == 'offline' else 'online'
+        return normalized
     
     def _init_protocols(self):
         """初始化协议实例"""
@@ -32,6 +44,10 @@ class DeviceManager:
         # 初始化OCPP协议
         if 'ocpp' in self.config:
             self.protocols['ocpp'] = OCPPProtocol(self.config['ocpp'])
+
+        # 初始化Simulation协议
+        if 'simulation' in self.config:
+            self.protocols['simulation'] = SimulationProtocol(self.config['simulation'])
     
     def start(self):
         """启动设备管理器"""
@@ -48,13 +64,13 @@ class DeviceManager:
                     self.logger.warning(f"{protocol_name}协议连接失败，将在无此协议模式下运行")
             except Exception as e:
                 self.logger.error(f"{protocol_name}协议连接异常: {e}，将在无此协议模式下运行")
-        
-        # 发现设备
-        if connected_protocols:
-            self.logger.info(f"通过以下协议发现设备: {connected_protocols}")
-            self.discover_devices()
-        else:
+
+        if not connected_protocols:
             self.logger.warning("无可用协议连接，设备发现功能将不可用")
+            return
+
+        if 'simulation' in connected_protocols:
+            self.refresh_protocol_candidates('simulation')
     
     def stop(self):
         """停止设备管理器"""
@@ -81,7 +97,7 @@ class DeviceManager:
                     # 为每个设备添加协议信息
                     for device_id, device_info in protocol_devices.items():
                         device_info['protocol'] = protocol_name
-                        discovered_devices[device_id] = device_info
+                        discovered_devices[device_id] = self._normalize_device_info(device_info)
                 except Exception as e:
                     self.logger.error(f"{protocol_name}协议设备发现失败: {e}")
         
@@ -89,6 +105,113 @@ class DeviceManager:
         self.devices.update(discovered_devices)
         self.logger.info(f"共发现{len(discovered_devices)}个设备")
         return discovered_devices
+
+    def refresh_protocol_candidates(self, protocol_name: str, clear_active: bool = False) -> Dict[str, Dict[str, Any]]:
+        protocol = self.protocols.get(protocol_name)
+        if not protocol or not protocol.is_connected:
+            return {}
+
+        discovered_candidates: Dict[str, Dict[str, Any]] = {}
+        try:
+            protocol_devices = protocol.discover_devices()
+            for device_id, device_info in protocol_devices.items():
+                device_info['protocol'] = protocol_name
+                normalized = self._normalize_device_info(device_info)
+                discovered_candidates[device_id] = normalized
+        except Exception as e:
+            self.logger.error(f"{protocol_name}协议候选设备刷新失败: {e}")
+            return {}
+
+        stale_candidate_ids = [
+            device_id
+            for device_id, device_info in self.device_candidates.items()
+            if device_info.get('protocol') == protocol_name
+        ]
+        for device_id in stale_candidate_ids:
+            del self.device_candidates[device_id]
+
+        if clear_active:
+            stale_device_ids = [
+                device_id
+                for device_id, device_info in self.devices.items()
+                if device_info.get('protocol') == protocol_name
+            ]
+            for device_id in stale_device_ids:
+                del self.devices[device_id]
+
+        for device_id, device_info in discovered_candidates.items():
+            self.device_candidates[device_id] = device_info
+
+        candidates = {
+            device_id: device_info
+            for device_id, device_info in self.device_candidates.items()
+            if device_info.get('protocol') == protocol_name
+        }
+        self.logger.info(f"{protocol_name}协议刷新后共有{len(candidates)}个候选设备")
+        return candidates
+
+    def refresh_protocol_devices(self, protocol_name: str) -> Dict[str, Dict[str, Any]]:
+        """刷新指定协议的设备清单，并移除该协议下已失效的旧设备。"""
+        protocol = self.protocols.get(protocol_name)
+        if not protocol or not protocol.is_connected:
+            return {}
+
+        discovered_devices: Dict[str, Dict[str, Any]] = {}
+        try:
+            protocol_devices = protocol.discover_devices()
+            for device_id, device_info in protocol_devices.items():
+                device_info['protocol'] = protocol_name
+                discovered_devices[device_id] = self._normalize_device_info(device_info)
+        except Exception as e:
+            self.logger.error(f"{protocol_name}协议设备刷新失败: {e}")
+            return {}
+
+        stale_device_ids = [
+            device_id
+            for device_id, device_info in self.devices.items()
+            if device_info.get('protocol') == protocol_name
+        ]
+        for device_id in stale_device_ids:
+            del self.devices[device_id]
+
+        self.devices.update(discovered_devices)
+        self.logger.info(f"{protocol_name}协议刷新后共有{len(discovered_devices)}个设备")
+        return discovered_devices
+
+    def register_device_candidate(self, device_info: Dict[str, Any]) -> bool:
+        device_id = device_info.get('device_id')
+        if not device_id:
+            return False
+
+        protocol_name = device_info.get('protocol')
+        if protocol_name not in self.protocols:
+            return False
+
+        normalized = self._normalize_device_info(device_info)
+        if device_id in self.devices:
+            return False
+
+        self.device_candidates[device_id] = normalized
+        self.logger.info(f"注册候选设备: {device_id}")
+        return True
+
+    def unregister_device_candidate(self, device_id: str) -> bool:
+        if device_id in self.devices:
+            return False
+        if device_id in self.device_candidates:
+            del self.device_candidates[device_id]
+            self.logger.info(f"删除候选设备: {device_id}")
+            return True
+        return False
+
+    def activate_device(self, device_id: str) -> bool:
+        device_info = self.device_candidates.get(device_id)
+        if not device_info or device_id in self.devices:
+            return False
+
+        self.devices[device_id] = device_info
+        self.logger.info(f"激活设备: {device_id}")
+        return True
     
     def register_device(self, device_info: Dict[str, Any]) -> bool:
         """手动注册设备
@@ -109,7 +232,7 @@ class DeviceManager:
             return False
         
         # 注册设备
-        self.devices[device_id] = device_info
+        self.devices[device_id] = self._normalize_device_info(device_info)
         self.logger.info(f"手动注册设备: {device_id}")
         return True
     
@@ -138,6 +261,12 @@ class DeviceManager:
             Optional[Dict[str, Any]]: 设备信息，不存在返回None
         """
         return self.devices.get(device_id)
+
+    def get_device_candidate(self, device_id: str) -> Optional[Dict[str, Any]]:
+        return self.device_candidates.get(device_id)
+
+    def is_device_connected(self, device_id: str) -> bool:
+        return device_id in self.devices
     
     def get_devices(self, device_type: Optional[str] = None) -> List[Dict[str, Any]]:
         """获取设备列表
@@ -151,6 +280,11 @@ class DeviceManager:
         if device_type:
             return [device for device in self.devices.values() if device.get('type') == device_type]
         return list(self.devices.values())
+
+    def get_device_candidates(self, device_type: Optional[str] = None) -> List[Dict[str, Any]]:
+        if device_type:
+            return [device for device in self.device_candidates.values() if device.get('type') == device_type]
+        return list(self.device_candidates.values())
     
     def read_device_data(self, device_id: str, register: str) -> Optional[Any]:
         """读取设备数据
@@ -238,5 +372,5 @@ class DeviceManager:
             status: 新状态
         """
         if device_id in self.devices:
-            self.devices[device_id]['status'] = status
+            self.devices[device_id]['status'] = 'offline' if str(status).lower() == 'offline' else 'online'
             self.logger.info(f"更新设备状态: {device_id} -> {status}")

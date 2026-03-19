@@ -24,7 +24,7 @@ class DataCollector:
         self.database = database
         self.collecting = False
         self.collect_thread = None
-        self.collect_interval = config.get('collect_interval', 10)  # 采集间隔（秒）
+        self.collect_interval = config.get('monitor.collect_interval', 10)  # 采集间隔（秒）
         self.data_buffer: List[Dict[str, Any]] = []
         self.buffer_lock = threading.Lock()
         self.logger = get_logger('DataCollector')
@@ -88,7 +88,9 @@ class DataCollector:
             device_type = device.get('type', 'unknown')
             
             # 根据设备类型采集不同的数据
-            if device_type == 'pv':
+            if device_type == 'grid_meter':
+                data = self._collect_grid_meter_data(device_id, timestamp)
+            elif device_type == 'pv':
                 data = self._collect_pv_data(device_id, timestamp)
             elif device_type == 'energy_storage':
                 data = self._collect_storage_data(device_id, timestamp)
@@ -113,6 +115,32 @@ class DataCollector:
                 self.database.insert_data(data)
         
         return collected_data
+
+    def _collect_grid_meter_data(self, device_id: str, timestamp: datetime) -> Dict[str, Any]:
+        try:
+            power = self.device_manager.read_device_data(device_id, 'power') or 0
+            status = self.device_manager.read_device_data(device_id, 'status') or 'unknown'
+
+            return {
+                'device_id': device_id,
+                'device_type': 'grid_meter',
+                'timestamp': timestamp.isoformat(),
+                'data': {
+                    'power': power,
+                    'status': status,
+                }
+            }
+        except Exception as e:
+            self.logger.warning("采集总表数据失败: %s", e)
+            return {
+                'device_id': device_id,
+                'device_type': 'grid_meter',
+                'timestamp': timestamp.isoformat(),
+                'data': {
+                    'power': 0,
+                    'status': 'error',
+                }
+            }
     
     def _collect_pv_data(self, device_id: str, timestamp: datetime) -> Dict[str, Any]:
         """采集光伏设备数据
@@ -141,7 +169,9 @@ class DataCollector:
                     'energy': energy,
                     'voltage': voltage,
                     'current': current,
-                    'status': status
+                    'status': status,
+                    'power_limit': self.device_manager.read_device_data(device_id, 'power_limit') or power,
+                    'min_power_limit': self.device_manager.read_device_data(device_id, 'min_power_limit') or 0,
                 }
             }
         except Exception as e:
@@ -186,7 +216,9 @@ class DataCollector:
                     'power': power,
                     'voltage': voltage,
                     'current': current,
-                    'mode': mode
+                    'mode': mode,
+                    'max_charge_power': self.device_manager.read_device_data(device_id, 'max_charge_power') or 0,
+                    'max_discharge_power': self.device_manager.read_device_data(device_id, 'max_discharge_power') or 0,
                 }
             }
         except Exception as e:
@@ -231,7 +263,10 @@ class DataCollector:
                     'power': power,
                     'energy': energy,
                     'voltage': voltage,
-                    'current': current
+                    'current': current,
+                    'power_limit': self.device_manager.read_device_data(device_id, 'power_limit') or power,
+                    'max_power': self.device_manager.read_device_data(device_id, 'max_power') or power,
+                    'min_power': self.device_manager.read_device_data(device_id, 'min_power') or 0,
                 }
             }
         except Exception as e:
@@ -293,8 +328,21 @@ class DataCollector:
         """
         with self.buffer_lock:
             if device_id:
-                return [data for data in self.data_buffer if data['device_id'] == device_id]
-            return self.data_buffer.copy()
+                latest = None
+                for data in self.data_buffer:
+                    if data['device_id'] != device_id:
+                        continue
+                    if latest is None or data['timestamp'] > latest['timestamp']:
+                        latest = data
+                return [latest] if latest else []
+
+            latest_by_device: Dict[str, Dict[str, Any]] = {}
+            for data in self.data_buffer:
+                current = latest_by_device.get(data['device_id'])
+                if current is None or data['timestamp'] > current['timestamp']:
+                    latest_by_device[data['device_id']] = data
+
+            return list(latest_by_device.values())
     
     def get_data_summary(self) -> Dict[str, Any]:
         """获取数据采集摘要

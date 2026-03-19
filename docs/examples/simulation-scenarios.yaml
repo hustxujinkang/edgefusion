@@ -1,0 +1,27 @@
+simulation:
+  enabled: true
+  tick_seconds: 1.0
+
+  # Static export-heavy daytime baseline
+  sunny_midday:
+    scenario: sunny_midday
+
+  # Deterministic PV fluctuation for cloud cover testing
+  cloud_pass:
+    scenario: cloud_pass
+
+  # Storage starts low and capacity is constrained
+  low_soc:
+    scenario: low_soc
+
+  # High base load and multiple active chargers
+  charger_rush:
+    scenario: charger_rush
+
+  # Example override on top of a built-in template
+  charger_rush_custom:
+    scenario: charger_rush
+    base_load_w: 6500
+    chargers:
+      count: 4
+      power_w: 5000
