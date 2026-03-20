@@ -1,7 +1,6 @@
 # Modbus协议实现
 from typing import Dict, Any, Optional
 from pymodbus.client import ModbusTcpClient
-from pymodbus.exceptions import ModbusException
 from ..logger import get_logger
 from .base import ProtocolBase
 
@@ -52,7 +51,63 @@ class ModbusProtocol(ProtocolBase):
             self.logger.error("Modbus断开失败: %s", e)
             return False
     
-    def read_data(self, device_id: str, register: str) -> Optional[Any]:
+    def _normalize_register_definition(self, register: Any) -> Dict[str, Any]:
+        if isinstance(register, dict):
+            return dict(register)
+        return {"addr": int(register)}
+
+    def _resolve_register_address(self, register: Any) -> int:
+        if isinstance(register, dict):
+            for key in ("register", "address", "addr"):
+                if key in register:
+                    return int(register[key])
+            raise ValueError(f"无效寄存器定义: {register}")
+        return int(register)
+
+    def _get_register_type(self, register: Dict[str, Any]) -> str:
+        return str(register.get("type", "u16")).lower()
+
+    def _get_read_count(self, register: Dict[str, Any]) -> int:
+        if "count" in register:
+            return max(1, int(register["count"]))
+
+        register_type = self._get_register_type(register)
+        if register_type in {"u32", "i32"}:
+            return 2
+        return 1
+
+    def _decode_value(self, registers: list[int], register: Dict[str, Any]) -> Any:
+        register_type = self._get_register_type(register)
+        scale = float(register.get("scale", 1) or 1)
+
+        if register_type == "u16":
+            value = int(registers[0])
+        elif register_type == "i16":
+            value = int(registers[0])
+            if value >= 0x8000:
+                value -= 0x10000
+        elif register_type in {"u32", "i32"}:
+            value = (int(registers[0]) << 16) | int(registers[1])
+            if register_type == "i32" and value >= 0x80000000:
+                value -= 0x100000000
+        else:
+            value = int(registers[0])
+
+        decoded = value * scale
+        if float(decoded).is_integer():
+            return int(decoded)
+        return decoded
+
+    def _encode_single_value(self, register: Dict[str, Any], value: Any) -> int:
+        register_type = self._get_register_type(register)
+        scale = float(register.get("scale", 1) or 1)
+        raw_value = int(round(float(value) / scale))
+
+        if register_type == "i16" and raw_value < 0:
+            raw_value += 0x10000
+        return raw_value & 0xFFFF
+
+    def read_data(self, device_id: str, register: Any) -> Optional[Any]:
         """读取Modbus设备数据
         
         Args:
@@ -67,16 +122,16 @@ class ModbusProtocol(ProtocolBase):
         
         try:
             slave_id = int(device_id)
-            reg_addr = int(register)
-            
-            # 根据寄存器类型读取数据
-            # 这里简化处理，实际应根据设备手册确定寄存器类型
-            response = self.client.read_holding_registers(reg_addr, 1, slave=slave_id)
+            register_def = self._normalize_register_definition(register)
+            reg_addr = self._resolve_register_address(register_def)
+            count = self._get_read_count(register_def)
+
+            response = self.client.read_holding_registers(reg_addr, count, slave=slave_id)
             
             if response.isError():
                 return None
-            
-            return response.registers[0]
+
+            return self._decode_value(response.registers, register_def)
         except Exception as e:
             self.logger.error("Modbus读取失败: %s", e)
             return None
@@ -132,14 +187,6 @@ class ModbusProtocol(ProtocolBase):
             self.logger.error("写寄存器异常: %s", e)
             return False
 
-    def _resolve_register_address(self, register: Any) -> int:
-        if isinstance(register, dict):
-            for key in ("register", "address", "addr"):
-                if key in register:
-                    return int(register[key])
-            raise ValueError(f"无效寄存器定义: {register}")
-        return int(register)
-
     def _build_command_values(self, register: Dict[str, Any], value: Any) -> list[int]:
         builder = register.get("builder")
         if builder == "xj_power_absolute":
@@ -182,8 +229,10 @@ class ModbusProtocol(ProtocolBase):
                 values = self._build_command_values(register, value)
                 return self._write_registers(reg_addr, values, slave_id)
 
-            reg_addr = self._resolve_register_address(register)
-            reg_value = int(register.get("fixed_value", value)) if isinstance(register, dict) else int(value)
+            register_def = self._normalize_register_definition(register)
+            reg_addr = self._resolve_register_address(register_def)
+            reg_value = register_def.get("fixed_value", value)
+            reg_value = self._encode_single_value(register_def, reg_value)
 
             response = self.client.write_register(reg_addr, reg_value, slave=slave_id)
 

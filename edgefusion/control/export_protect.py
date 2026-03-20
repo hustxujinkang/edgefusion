@@ -39,6 +39,15 @@ def _is_online(snapshot: dict[str, Any]) -> bool:
     return str(snapshot.get("data", {}).get("status", "online")).lower() != "offline"
 
 
+def _int_value(value: Any, default: int = 0) -> int:
+    try:
+        if value is None:
+            return default
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
 def _allocate_evenly(total_w: int, headroom_by_device: dict[str, int]) -> dict[str, int]:
     allocations = {device_id: 0 for device_id in headroom_by_device}
     remaining = total_w
@@ -92,11 +101,11 @@ def plan_export_protect(state: SiteState, config: dict[str, Any] | None = None) 
             continue
 
         data = snapshot.get("data", {})
-        soc = float(data.get("soc", 0))
+        soc = float(data.get("soc", 0) or 0)
         if soc >= storage_soc_soft_limit:
             continue
 
-        available_charge_w = int(max(0, data.get("max_charge_power", 0)))
+        available_charge_w = max(0, _int_value(data.get("max_charge_power")))
         allocated_w = min(remaining_gap_w, available_charge_w)
         if allocated_w <= 0:
             continue
@@ -119,11 +128,10 @@ def plan_export_protect(state: SiteState, config: dict[str, Any] | None = None) 
             continue
 
         data = snapshot.get("data", {})
-        status = str(data.get("status", "")).lower()
-        current_power_w = int(data.get("power", 0))
-        max_power_w = int(data.get("max_power", current_power_w))
+        current_power_w = _int_value(data.get("power"))
+        max_power_w = _int_value(data.get("max_power"), current_power_w)
 
-        if current_power_w <= 0 or status != "charging":
+        if current_power_w <= 0:
             continue
 
         headroom_w = max(0, max_power_w - current_power_w)
@@ -156,8 +164,8 @@ def plan_export_protect(state: SiteState, config: dict[str, Any] | None = None) 
             continue
 
         data = snapshot.get("data", {})
-        current_limit_w = int(data.get("power_limit", data.get("power", 0)))
-        min_power_limit_w = int(data.get("min_power_limit", 0))
+        current_limit_w = _int_value(data.get("power_limit"), _int_value(data.get("power")))
+        min_power_limit_w = _int_value(data.get("min_power_limit"))
         curtailable_w = max(0, current_limit_w - min_power_limit_w)
         curtailment_w = min(remaining_gap_w, curtailable_w)
 

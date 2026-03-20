@@ -1,4 +1,5 @@
 from edgefusion.config import Config
+import edgefusion.device_manager as device_manager_module
 from edgefusion.device_manager import DeviceManager
 from edgefusion.monitor.collector import DataCollector
 
@@ -6,7 +7,10 @@ from edgefusion.monitor.collector import DataCollector
 class FakeProtocol:
     def __init__(self, read_values=None):
         self.connected = True
-        self.read_values = read_values or {}
+        self.read_values = {
+            (device_id, self._normalize_register(register)): value
+            for (device_id, register), value in (read_values or {}).items()
+        }
         self.read_calls = []
         self.write_calls = []
 
@@ -16,10 +20,31 @@ class FakeProtocol:
 
     def read_data(self, device_id, register):
         self.read_calls.append((device_id, register))
-        return self.read_values.get((device_id, register))
+        return self.read_values.get((device_id, self._normalize_register(register)))
 
     def write_data(self, device_id, register, value):
         self.write_calls.append((device_id, register, value))
+        return True
+
+    def _normalize_register(self, register):
+        if isinstance(register, dict):
+            return register.get("addr", register.get("address", register.get("register")))
+        if isinstance(register, str) and register.isdigit():
+            return int(register)
+        return register
+
+
+class EndpointProtocol(FakeProtocol):
+    instances = []
+
+    def __init__(self, config):
+        super().__init__()
+        self.config = dict(config)
+        self.connected = False
+        EndpointProtocol.instances.append(self)
+
+    def connect(self):
+        self.connected = True
         return True
 
 
@@ -256,12 +281,12 @@ def test_device_manager_derives_semantic_maps_from_point_table_models():
     assert device_manager.read_device_data("storage_real", "soc") == 61
     assert device_manager.read_device_data("storage_real", "max_charge_power") == 3200
     assert protocol.read_calls == [
-        ("grid_real", "50001"),
-        ("grid_real", "50002"),
-        ("pv_real", "51001"),
-        ("pv_real", "51006"),
-        ("storage_real", "52001"),
-        ("storage_real", "52006"),
+        ("grid_real", {"addr": 50001, "type": "i32", "scale": 1, "unit": "W"}),
+        ("grid_real", {"addr": 50002, "type": "u16", "scale": 1, "unit": ""}),
+        ("pv_real", {"addr": 51001, "type": "i32", "scale": 1, "unit": "W"}),
+        ("pv_real", {"addr": 51006, "type": "u16", "scale": 1, "unit": "W"}),
+        ("storage_real", {"addr": 52001, "type": "u16", "scale": 1, "unit": "%"}),
+        ("storage_real", {"addr": 52006, "type": "u16", "scale": 1, "unit": "W"}),
     ]
 
 
@@ -312,8 +337,8 @@ def test_charger_model_point_table_expands_connectors_and_maps_gun_registers():
     assert device_manager.read_device_data("charger_real:2", "power") == 7200
     assert device_manager.read_device_data("charger_real:2", "status") == 3
     assert protocol.read_calls == [
-        ("charger_real", "8462"),
-        ("charger_real", "8448"),
+        ("charger_real", {"addr": 0x210E, "type": "u32", "scale": 0.001, "unit": "kW"}),
+        ("charger_real", {"addr": 0x2100, "type": "u16", "scale": 1, "unit": ""}),
     ]
 
 
@@ -346,3 +371,67 @@ def test_charger_model_point_table_maps_power_limit_to_complex_control_command()
             3200,
         )
     ]
+
+
+def test_device_manager_uses_dedicated_modbus_protocol_per_endpoint(monkeypatch):
+    EndpointProtocol.instances = []
+    monkeypatch.setattr(device_manager_module, "ModbusProtocol", EndpointProtocol)
+
+    device_manager = DeviceManager({"modbus": {"host": "base-host", "port": 502, "timeout": 5}})
+    base_protocol = device_manager.protocols["modbus"]
+    base_protocol.connected = True
+
+    assert device_manager.register_device(
+        {
+            "device_id": "grid_meter_a",
+            "type": "grid_meter",
+            "protocol": "modbus",
+            "host": "10.0.0.10",
+            "port": 502,
+            "unit_id": 1,
+            "telemetry_map": {"power": {"addr": 30001, "type": "i32"}},
+        }
+    ) is True
+    assert device_manager.register_device(
+        {
+            "device_id": "grid_meter_b",
+            "type": "grid_meter",
+            "protocol": "modbus",
+            "host": "10.0.0.11",
+            "port": 1502,
+            "unit_id": 2,
+            "telemetry_map": {"power": {"addr": 30001, "type": "i32"}},
+        }
+    ) is True
+
+    device_manager.read_device_data("grid_meter_a", "power")
+    device_manager.read_device_data("grid_meter_b", "power")
+
+    endpoint_protocols = [instance for instance in EndpointProtocol.instances if instance is not base_protocol]
+    assert [(instance.config["host"], instance.config["port"]) for instance in endpoint_protocols] == [
+        ("10.0.0.10", 502),
+        ("10.0.0.11", 1502),
+    ]
+    assert endpoint_protocols[0].read_calls == [("1", {"addr": 30001, "type": "i32"})]
+    assert endpoint_protocols[1].read_calls == [("2", {"addr": 30001, "type": "i32"})]
+
+
+def test_collector_keeps_missing_grid_power_as_none_for_trust_checks():
+    protocol = FakeProtocol({("grid_real", "30002"): "online"})
+    device_manager = DeviceManager({})
+    device_manager.protocols["modbus"] = protocol
+
+    assert device_manager.register_device(
+        {
+            "device_id": "grid_real",
+            "type": "grid_meter",
+            "protocol": "modbus",
+            "telemetry_map": {"power": "30001", "status": "30002"},
+        }
+    ) is True
+
+    collector = DataCollector(Config(), device_manager, None)
+    collected = collector.collect_data()
+
+    assert collected[0]["data"]["power"] is None
+    assert collected[0]["data"]["status"] == "online"

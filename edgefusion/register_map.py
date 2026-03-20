@@ -3,6 +3,8 @@ from typing import Any, Dict
 
 def _extract_read_register(raw_mapping: Any) -> Any:
     if isinstance(raw_mapping, dict):
+        if any(key in raw_mapping for key in ("register", "address", "addr")):
+            return dict(raw_mapping)
         for key in ("register", "address", "addr"):
             if key in raw_mapping:
                 value = raw_mapping[key]
@@ -15,6 +17,8 @@ def _extract_read_register(raw_mapping: Any) -> Any:
 def _extract_write_register(raw_mapping: Any) -> Any:
     if isinstance(raw_mapping, dict):
         if "cmd" in raw_mapping or "builder" in raw_mapping:
+            return dict(raw_mapping)
+        if any(key in raw_mapping for key in ("register", "address", "addr")):
             return dict(raw_mapping)
         return _extract_read_register(raw_mapping)
     return _extract_read_register(raw_mapping)

@@ -20,6 +20,15 @@ MODE_DESCRIPTIONS = {
 }
 
 
+def _int_value(value: Any, default: int = 0) -> int:
+    try:
+        if value is None:
+            return default
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
 class ModeControllerStrategy(StrategyBase):
     """Single mode-based controller for the first export-protection iteration."""
 
@@ -347,16 +356,16 @@ class ModeControllerStrategy(StrategyBase):
             if status == "offline":
                 continue
 
-            if device_type == "energy_storage" and int(data.get("max_charge_power", 0)) > 0:
+            if device_type == "energy_storage" and _int_value(data.get("max_charge_power")) > 0:
                 return True
             if device_type in {"charging_station", "charging_connector"}:
-                current_power = int(data.get("power", 0))
-                max_power = int(data.get("max_power", current_power))
-                if str(data.get("status", "")).lower() == "charging" and max_power > current_power:
+                current_power = _int_value(data.get("power"))
+                max_power = _int_value(data.get("max_power"), current_power)
+                if current_power > 0 and max_power > current_power:
                     return True
             if device_type == "pv":
-                current_limit = int(data.get("power_limit", data.get("power", 0)))
-                min_limit = int(data.get("min_power_limit", 0))
+                current_limit = _int_value(data.get("power_limit"), _int_value(data.get("power")))
+                min_limit = _int_value(data.get("min_power_limit"))
                 if current_limit > min_limit:
                     return True
 

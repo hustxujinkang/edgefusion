@@ -29,6 +29,9 @@ class DataCollector:
         self.data_buffer: List[Dict[str, Any]] = []
         self.buffer_lock = threading.Lock()
         self.logger = get_logger('DataCollector')
+
+    def _read_field(self, device_id: str, field: str) -> Any:
+        return self.device_manager.read_device_data(device_id, field)
     
     def start(self) -> bool:
         """启动数据采集
@@ -121,8 +124,8 @@ class DataCollector:
 
     def _collect_grid_meter_data(self, device_id: str, timestamp: datetime) -> Dict[str, Any]:
         try:
-            power = self.device_manager.read_device_data(device_id, 'power') or 0
-            status = self.device_manager.read_device_data(device_id, 'status') or 'unknown'
+            power = self._read_field(device_id, 'power')
+            status = self._read_field(device_id, 'status') or 'unknown'
 
             return {
                 'device_id': device_id,
@@ -140,7 +143,7 @@ class DataCollector:
                 'device_type': 'grid_meter',
                 'timestamp': timestamp.isoformat(),
                 'data': {
-                    'power': 0,
+                    'power': None,
                     'status': 'error',
                 }
             }
@@ -157,11 +160,13 @@ class DataCollector:
         """
         try:
             # 读取光伏设备数据
-            power = self.device_manager.read_device_data(device_id, 'power') or 0
-            energy = self.device_manager.read_device_data(device_id, 'energy') or 0
-            voltage = self.device_manager.read_device_data(device_id, 'voltage') or 0
-            current = self.device_manager.read_device_data(device_id, 'current') or 0
-            status = self.device_manager.read_device_data(device_id, 'status') or 'unknown'
+            power = self._read_field(device_id, 'power')
+            energy = self._read_field(device_id, 'energy')
+            voltage = self._read_field(device_id, 'voltage')
+            current = self._read_field(device_id, 'current')
+            status = self._read_field(device_id, 'status') or 'unknown'
+            power_limit = self._read_field(device_id, 'power_limit')
+            min_power_limit = self._read_field(device_id, 'min_power_limit')
             
             return {
                 'device_id': device_id,
@@ -173,8 +178,8 @@ class DataCollector:
                     'voltage': voltage,
                     'current': current,
                     'status': status,
-                    'power_limit': self.device_manager.read_device_data(device_id, 'power_limit') or power,
-                    'min_power_limit': self.device_manager.read_device_data(device_id, 'min_power_limit') or 0,
+                    'power_limit': power if power_limit is None else power_limit,
+                    'min_power_limit': min_power_limit,
                 }
             }
         except Exception as e:
@@ -184,10 +189,10 @@ class DataCollector:
                 'device_type': 'pv',
                 'timestamp': timestamp.isoformat(),
                 'data': {
-                    'power': 0,
-                    'energy': 0,
-                    'voltage': 0,
-                    'current': 0,
+                    'power': None,
+                    'energy': None,
+                    'voltage': None,
+                    'current': None,
                     'status': 'error'
                 }
             }
@@ -204,11 +209,11 @@ class DataCollector:
         """
         try:
             # 读取储能设备数据
-            soc = self.device_manager.read_device_data(device_id, 'soc') or 0
-            power = self.device_manager.read_device_data(device_id, 'power') or 0
-            voltage = self.device_manager.read_device_data(device_id, 'voltage') or 0
-            current = self.device_manager.read_device_data(device_id, 'current') or 0
-            mode = self.device_manager.read_device_data(device_id, 'mode') or 'unknown'
+            soc = self._read_field(device_id, 'soc')
+            power = self._read_field(device_id, 'power')
+            voltage = self._read_field(device_id, 'voltage')
+            current = self._read_field(device_id, 'current')
+            mode = self._read_field(device_id, 'mode') or 'unknown'
             
             return {
                 'device_id': device_id,
@@ -220,8 +225,8 @@ class DataCollector:
                     'voltage': voltage,
                     'current': current,
                     'mode': mode,
-                    'max_charge_power': self.device_manager.read_device_data(device_id, 'max_charge_power') or 0,
-                    'max_discharge_power': self.device_manager.read_device_data(device_id, 'max_discharge_power') or 0,
+                    'max_charge_power': self._read_field(device_id, 'max_charge_power'),
+                    'max_discharge_power': self._read_field(device_id, 'max_discharge_power'),
                 }
             }
         except Exception as e:
@@ -231,10 +236,10 @@ class DataCollector:
                 'device_type': 'energy_storage',
                 'timestamp': timestamp.isoformat(),
                 'data': {
-                    'soc': 0,
-                    'power': 0,
-                    'voltage': 0,
-                    'current': 0,
+                    'soc': None,
+                    'power': None,
+                    'voltage': None,
+                    'current': None,
                     'mode': 'error'
                 }
             }
@@ -254,11 +259,14 @@ class DataCollector:
         for connector in self.device_manager.get_device_connectors(pile_id):
             connector_device_id = connector['device_id']
             try:
-                status = self.device_manager.read_device_data(connector_device_id, 'status') or 'Available'
-                power = self.device_manager.read_device_data(connector_device_id, 'power') or 0
-                energy = self.device_manager.read_device_data(connector_device_id, 'energy') or 0
-                voltage = self.device_manager.read_device_data(connector_device_id, 'voltage') or 0
-                current = self.device_manager.read_device_data(connector_device_id, 'current') or 0
+                status = self._read_field(connector_device_id, 'status') or 'Available'
+                power = self._read_field(connector_device_id, 'power')
+                energy = self._read_field(connector_device_id, 'energy')
+                voltage = self._read_field(connector_device_id, 'voltage')
+                current = self._read_field(connector_device_id, 'current')
+                power_limit = self._read_field(connector_device_id, 'power_limit')
+                max_power = self._read_field(connector_device_id, 'max_power')
+                min_power = self._read_field(connector_device_id, 'min_power')
 
                 snapshots.append(
                     {
@@ -273,9 +281,9 @@ class DataCollector:
                             'energy': energy,
                             'voltage': voltage,
                             'current': current,
-                            'power_limit': self.device_manager.read_device_data(connector_device_id, 'power_limit') or power,
-                            'max_power': self.device_manager.read_device_data(connector_device_id, 'max_power') or power,
-                            'min_power': self.device_manager.read_device_data(connector_device_id, 'min_power') or 0,
+                            'power_limit': power if power_limit is None else power_limit,
+                            'max_power': power if max_power is None else max_power,
+                            'min_power': min_power,
                         }
                     }
                 )
@@ -290,10 +298,10 @@ class DataCollector:
                         'timestamp': timestamp.isoformat(),
                         'data': {
                             'status': 'Error',
-                            'power': 0,
-                            'energy': 0,
-                            'voltage': 0,
-                            'current': 0
+                            'power': None,
+                            'energy': None,
+                            'voltage': None,
+                            'current': None
                         }
                     }
                 )

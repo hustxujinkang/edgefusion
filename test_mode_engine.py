@@ -205,6 +205,31 @@ def test_export_protect_splits_charger_headroom_evenly_with_caps():
     assert charger_actions["charger-2:1"].delta_w == 2500
 
 
+def test_export_protect_can_use_active_charger_with_numeric_status_code():
+    state = build_site_state(
+        [
+            _snapshot("grid-meter-1", "grid_meter", {"power": -7000, "status": "online"}),
+            _snapshot(
+                "charger-1:1",
+                "charging_connector",
+                {
+                    "status": 3,
+                    "power": 2000,
+                    "max_power": 3500,
+                    "min_power": 1000,
+                },
+            ),
+        ],
+        {"max_data_age_seconds": 30},
+    )
+
+    plan = plan_export_protect(state, {"export_limit_w": 5000})
+
+    assert [(action.device_id, action.action, action.value_w) for action in plan.actions] == [
+        ("charger-1:1", "set_power_limit", 3500),
+    ]
+
+
 def test_mode_controller_uses_collector_snapshots_and_executes_export_actions():
     collector = _FakeCollector(
         [

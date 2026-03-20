@@ -21,6 +21,7 @@ class DeviceManager:
         self.devices: Dict[str, Dict[str, Any]] = {}
         self.device_candidates: Dict[str, Dict[str, Any]] = {}
         self.protocols: Dict[str, ProtocolBase] = {}
+        self.endpoint_protocols: Dict[str, ProtocolBase] = {}
         self._init_protocols()
 
     def _normalize_device_info(self, device_info: Dict[str, Any]) -> Dict[str, Any]:
@@ -73,6 +74,48 @@ class DeviceManager:
         # 初始化Simulation协议
         if 'simulation' in self.config:
             self.protocols['simulation'] = SimulationProtocol(self.config['simulation'])
+
+    def _build_modbus_endpoint_key(self, device_info: Dict[str, Any]) -> Optional[str]:
+        host = device_info.get('host')
+        port = device_info.get('port')
+        if host is None or port is None:
+            return None
+        timeout = device_info.get('timeout', self.config.get('modbus', {}).get('timeout', 5))
+        return f"modbus://{host}:{port}?timeout={timeout}"
+
+    def _get_protocol_for_device(self, device_info: Dict[str, Any]) -> Optional[ProtocolBase]:
+        protocol_name = device_info.get('protocol')
+        if protocol_name != 'modbus':
+            return self.protocols.get(protocol_name)
+
+        endpoint_key = self._build_modbus_endpoint_key(device_info)
+        if not endpoint_key:
+            return self.protocols.get('modbus')
+
+        protocol = self.endpoint_protocols.get(endpoint_key)
+        if protocol is None:
+            timeout = device_info.get('timeout', self.config.get('modbus', {}).get('timeout', 5))
+            protocol = ModbusProtocol(
+                {
+                    'host': device_info['host'],
+                    'port': int(device_info['port']),
+                    'timeout': timeout,
+                }
+            )
+            self.endpoint_protocols[endpoint_key] = protocol
+
+        if not protocol.is_connected:
+            protocol.connect()
+        return protocol
+
+    def _get_io_device_id(self, device_info: Dict[str, Any], fallback_device_id: str) -> str:
+        if device_info.get('io_device_id') is not None:
+            return str(device_info['io_device_id'])
+        if device_info.get('protocol') == 'modbus':
+            unit_id = device_info.get('unit_id', device_info.get('slave_id'))
+            if unit_id is not None:
+                return str(unit_id)
+        return fallback_device_id
     
     def start(self):
         """启动设备管理器"""
@@ -102,6 +145,8 @@ class DeviceManager:
         # 断开所有协议
         for protocol_name, protocol in self.protocols.items():
             self.logger.info(f"断开{protocol_name}协议...")
+            protocol.disconnect()
+        for protocol in self.endpoint_protocols.values():
             protocol.disconnect()
     
     def discover_devices(self) -> Dict[str, Dict[str, Any]]:
@@ -342,16 +387,16 @@ class DeviceManager:
                 return None
             
             protocol_name = device_info.get('protocol')
-            if protocol_name not in self.protocols:
+            protocol = self._get_protocol_for_device(device_info)
+            if protocol is None:
                 self.logger.warning(f"协议不存在: {protocol_name}")
                 return None
-            
-            protocol = self.protocols[protocol_name]
+
             if not protocol.is_connected:
                 self.logger.warning(f"协议未连接: {protocol_name}")
                 return None
             
-            io_device_id = device_info.get('io_device_id', device_id)
+            io_device_id = self._get_io_device_id(device_info, device_id)
             protocol_register = resolve_read_register(device_info, register)
             return protocol.read_data(io_device_id, protocol_register)
         except Exception as e:
@@ -376,16 +421,16 @@ class DeviceManager:
                 return False
             
             protocol_name = device_info.get('protocol')
-            if protocol_name not in self.protocols:
+            protocol = self._get_protocol_for_device(device_info)
+            if protocol is None:
                 self.logger.warning(f"协议不存在: {protocol_name}")
                 return False
-            
-            protocol = self.protocols[protocol_name]
+
             if not protocol.is_connected:
                 self.logger.warning(f"协议未连接: {protocol_name}")
                 return False
             
-            io_device_id = device_info.get('io_device_id', device_id)
+            io_device_id = self._get_io_device_id(device_info, device_id)
             protocol_register = resolve_write_register(device_info, register)
             return protocol.write_data(io_device_id, protocol_register, value)
         except Exception as e:
