@@ -167,6 +167,7 @@ edgefusion/
 │   ├── main.py
 │   ├── config.py
 │   ├── device_manager.py
+│   ├── adapters/
 │   ├── point_tables.py
 │   ├── protocol/
 │   ├── strategy/

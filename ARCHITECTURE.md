@@ -15,7 +15,7 @@
 │   ├── config.py            # 配置管理
 │   ├── device_manager.py    # 设备管理模块
 │   ├── adapters/            # 厂家协议适配层
-│   ├── point_tables.py      # 型号点表定义
+│   ├── point_tables.py      # 点表兼容导出入口
 │   ├── protocol/            # 协议支持模块
 │   │   ├── __init__.py
 │   │   ├── base.py          # 协议基类
@@ -53,7 +53,8 @@
 | 配置管理 | 系统配置加载和管理 | edgefusion/config.py |
 | 设备管理 | 设备注册、发现和管理 | edgefusion/device_manager.py |
 | 设备适配 | 厂家点表、语义读写映射 | edgefusion/adapters/ |
-| 点表定义 | 各型号设备的寄存器映射 | edgefusion/point_tables.py |
+| 点表定义 | 各型号设备的寄存器映射 | edgefusion/adapters/modbus/profiles.py |
+| 兼容点表入口 | 旧点表 API 兼容导出 | edgefusion/point_tables.py |
 | 协议支持 | 各类设备协议的实现 | edgefusion/protocol/ |
 | 物理连接 | TCP、串口、Broker连接承载 | edgefusion/transport/ |
 | 控制策略 | 协同控制策略的实现 | edgefusion/strategy/ |
@@ -106,7 +107,7 @@ POINT_TABLES = {
 
 ### 4.2 统一控制映射
 
-系统通过 `point_tables.py` 和 `adapters/device_profiles.py` 将不同型号设备展开为统一的语义采集点和控制命令，再由 `DeviceManager`、协议层和传输层执行真实读写。
+系统通过 `adapters/modbus/profiles.py` 和 `adapters/device_profiles.py` 将不同型号设备展开为统一的语义采集点和控制命令，再由 `DeviceManager`、协议层和传输层执行真实读写。`point_tables.py` 只保留兼容导出入口。
 
 统一控制链路的特点：
 - 业务层和监控面板都只使用语义字段和语义命令

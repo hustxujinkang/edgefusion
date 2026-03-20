@@ -1,14 +1,14 @@
 from typing import Any, Dict
 
 from ..charger_layout import normalize_charger_pile
+from .modbus import get_modbus_device_default_maps
 from ..device_semantics import build_device_capabilities, normalize_runtime_value
-from ..point_tables import get_device_default_maps
 from ..register_map import resolve_read_register, resolve_write_register
 
 
 def normalize_device_profile(device_info: Dict[str, Any]) -> Dict[str, Any]:
     normalized = dict(device_info)
-    default_maps = get_device_default_maps(normalized)
+    default_maps = get_modbus_device_default_maps(normalized)
     for key, value in default_maps.items():
         if key in {"telemetry_map", "control_map"} and isinstance(value, dict):
             merged = dict(value)

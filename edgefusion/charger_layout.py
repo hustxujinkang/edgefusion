@@ -1,6 +1,6 @@
 from typing import Any, Dict, List
 from .device_semantics import build_device_capabilities
-from .point_tables import (
+from .adapters.modbus import (
     get_charger_connector_control_map,
     get_charger_connector_count,
     get_charger_connector_mode_map,

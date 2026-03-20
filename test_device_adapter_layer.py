@@ -3,6 +3,42 @@ from edgefusion.adapters.device_profiles import (
     resolve_protocol_read,
     resolve_protocol_write,
 )
+from edgefusion.point_tables import POINT_TABLES, get_device_default_maps
+
+
+def test_modbus_profile_module_exposes_builtin_model_tables():
+    from edgefusion.adapters.modbus.profiles import (
+        MODBUS_POINT_TABLES,
+        get_modbus_device_default_maps,
+    )
+
+    defaults = get_modbus_device_default_maps(
+        {
+            "device_id": "pv_1",
+            "type": "pv",
+            "model": "generic_pv",
+        }
+    )
+
+    assert MODBUS_POINT_TABLES["generic_pv"]["device_type"] == "pv"
+    assert defaults["telemetry_map"]["power"]["addr"] == 51001
+    assert defaults["control_map"]["power_limit"]["addr"] == 41001
+
+
+def test_point_tables_compatibility_facade_reexports_modbus_profiles():
+    from edgefusion.adapters.modbus.profiles import (
+        MODBUS_POINT_TABLES,
+        get_modbus_device_default_maps,
+    )
+
+    device_info = {
+        "device_id": "storage_1",
+        "type": "energy_storage",
+        "model": "generic_storage",
+    }
+
+    assert POINT_TABLES is MODBUS_POINT_TABLES
+    assert get_device_default_maps(device_info) == get_modbus_device_default_maps(device_info)
 
 
 def test_normalize_device_profile_merges_point_table_defaults():

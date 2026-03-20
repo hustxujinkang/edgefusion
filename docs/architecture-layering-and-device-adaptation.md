@@ -126,7 +126,7 @@ flowchart TD
 
 ### 3.2 还没有拆干净的部分
 
-- `point_tables.py` 仍同时承担了“设备模型描述”和“协议映射描述”
+- `point_tables.py` 已退化成兼容导出入口，但 `adapters/modbus/profiles.py` 仍是当前 Modbus 厂家 profile 的集中定义点，后续还可以继续按厂家或设备族拆分
 - `register_map.py` 已经是适配层的一部分，但仍保留兼容入口
 - `Modbus` 已经拆出 `modbus_factory.py + protocol/modbus.py + transport/modbus_tcp.py + transport/modbus_rtu.py`，但点表适配和厂家 profile 组织仍有继续收口空间
 - `MQTTProtocol` 仍然是骨架，没有形成完整的“适配层 + 协议层 + 连接层”
@@ -144,7 +144,8 @@ flowchart TD
 | `edgefusion/strategy/mode_controller.py` | 模式控制 | 设备模型层消费方 |
 | `edgefusion/charger_layout.py` | 设备视图展开 | 设备模型层 |
 | `edgefusion/adapters/device_profiles.py` | 设备语义适配入口 | 厂家协议适配层 |
-| `edgefusion/point_tables.py` | 型号点表 | 厂家协议适配层 |
+| `edgefusion/adapters/modbus/profiles.py` | Modbus 厂家 profile 与默认点表 | 厂家协议适配层 |
+| `edgefusion/point_tables.py` | 旧点表入口兼容层 | 厂家协议适配层兼容 facade |
 | `edgefusion/register_map.py` | 语义到协议映射 | 厂家协议适配层 |
 | `edgefusion/protocol/modbus_factory.py` | Modbus 协议组装与 endpoint 归一 | 编排 / 组合根 |
 | `edgefusion/protocol/modbus.py` | Modbus 实现 | 传输协议层 |
@@ -225,6 +226,7 @@ MQTT 不应只保留一个协议骨架，而应拆成：
 当前进展：
 
 - 已新增 `adapters/device_profiles.py` 作为设备适配层入口
+- 已新增 `adapters/modbus/profiles.py` 承接 Modbus 厂家 profile，`point_tables.py` 只保留兼容导出
 - 已新增 `transport/modbus_tcp.py` 作为 Modbus TCP 物理连接承载
 - 已新增 `transport/modbus_rtu.py` 作为 Modbus RTU 物理连接承载
 - 已新增 `protocol/modbus_factory.py` 负责 Modbus protocol + transport 组装和 endpoint 归一
@@ -233,9 +235,8 @@ MQTT 不应只保留一个协议骨架，而应拆成：
 
 剩余优先事项：
 
-- 继续弱化 `point_tables` 的设备模型角色
 - 继续明确 `register_map` 的兼容边界
-- 继续把厂家 profile 从大一统点表拆成更清晰的模块边界
+- 继续把 `adapters/modbus/profiles.py` 从单文件 profile 仓库拆成更清晰的模块边界
 
 ### 第二步：补 MQTT 真正的读链路
 
@@ -258,7 +259,7 @@ MQTT 不应只保留一个协议骨架，而应拆成：
 
 重点：
 
-- 把厂家映射从统一大文件里继续拆分
+- 把厂家映射从 `adapters/modbus/profiles.py` 继续拆到更清晰的 profile 模块
 - 保留 `status_map/mode_map/capabilities` 这类适配层元数据
 - 让新设备接入优先补 profile，而不是补业务层分支
 
