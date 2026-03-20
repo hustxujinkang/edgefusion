@@ -67,6 +67,21 @@ def test_vendor_registry_exposes_vendor_tables_and_device_family_views():
     assert "xj_dc_120kw" in get_vendor_point_tables_for_device_type("charging_station")
 
 
+def test_vendor_registry_resolves_vendor_aliases_and_model_aliases():
+    from edgefusion.adapters.modbus.profiles.vendors import (
+        get_vendor_default_model,
+        resolve_vendor_key,
+        resolve_vendor_model,
+    )
+
+    assert resolve_vendor_key("许继") == "xj"
+    assert resolve_vendor_key("XUJi") == "xj"
+    assert resolve_vendor_model("120 kW", vendor="许继", device_type="charging_station") == "xj_dc_120kw"
+    assert resolve_vendor_model("xj dc 240kw", vendor="xj", device_type="charging_station") == "xj_dc_240kw"
+    assert get_vendor_default_model("generic", "energy_storage") == "generic_storage"
+    assert get_vendor_default_model("xj", "charging_station") is None
+
+
 def test_point_tables_compatibility_facade_reexports_modbus_profiles():
     from edgefusion.adapters.modbus.profiles import (
         MODBUS_POINT_TABLES,
@@ -81,6 +96,37 @@ def test_point_tables_compatibility_facade_reexports_modbus_profiles():
 
     assert POINT_TABLES is MODBUS_POINT_TABLES
     assert get_device_default_maps(device_info) == get_modbus_device_default_maps(device_info)
+
+
+def test_modbus_defaults_can_resolve_vendor_model_aliases():
+    from edgefusion.adapters.modbus.profiles import get_modbus_device_default_maps
+
+    defaults = get_modbus_device_default_maps(
+        {
+            "device_id": "charger_1",
+            "type": "charging_station",
+            "manufacturer": "许继",
+            "model": "120kw",
+        }
+    )
+
+    assert defaults["connector_count"] == 2
+    assert defaults["telemetry_map"]["gun_count"]["addr"] == 0x1000
+
+
+def test_modbus_defaults_can_use_unambiguous_vendor_default_model():
+    from edgefusion.adapters.modbus.profiles import get_modbus_device_default_maps
+
+    defaults = get_modbus_device_default_maps(
+        {
+            "device_id": "storage_1",
+            "type": "energy_storage",
+            "manufacturer": "通用",
+        }
+    )
+
+    assert defaults["telemetry_map"]["soc"]["addr"] == 52001
+    assert defaults["control_map"]["mode"]["addr"] == 42001
 
 
 def test_register_map_primary_api_reads_from_explicit_semantic_maps_only():

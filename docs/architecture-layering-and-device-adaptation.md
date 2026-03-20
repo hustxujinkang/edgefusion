@@ -126,11 +126,11 @@ flowchart TD
 
 ### 3.2 还没有拆干净的部分
 
-- `point_tables.py` 已退化成兼容导出入口，`adapters/modbus/profiles/` 已按设备族拆成聚合模块，并通过 `vendors/` 注册入口聚合厂家级子模块，后续仍可以继续补更多厂家 profile
+- `point_tables.py` 已退化成兼容导出入口，`adapters/modbus/profiles/` 已按设备族拆成聚合模块，并通过 `vendors/` 注册入口聚合厂家级子模块；厂家别名、型号别名和不歧义默认 profile 解析也已下沉到该边界层
 - `register_map.py` 已经收敛成“显式语义映射解析 + 旧键兼容归一”边界，旧键兼容只保留在归一化入口
 - `Modbus` 已经拆出 `modbus_factory.py + protocol/modbus.py + transport/modbus_tcp.py + transport/modbus_rtu.py`，并新增 `vendors` 注册表承接厂家 profile 扩展，但点表适配和厂家 profile 注册治理仍有继续收口空间
 - `MQTTProtocol` 仍然是骨架，没有形成完整的“适配层 + 协议层 + 连接层”
-- `DeviceManager` 已经不再自己拼 Modbus transport，协议初始化和 endpoint 分派也已下沉到 `protocol/registry.py`，但它仍是当前的统一编排入口，后续可以继续向更独立的 provider / registry 收口
+- `DeviceManager` 已经不再自己拼 Modbus transport，协议初始化和 endpoint 分派也已下沉到 `protocol/registry.py`；设备清单、候选清单和生命周期动作也已下沉到轻量的 `device_inventory.py`，但它仍是当前的统一编排入口
 
 ## 4. 当前代码归位建议
 
@@ -145,16 +145,17 @@ flowchart TD
 | `edgefusion/charger_layout.py` | 设备视图展开 | 设备模型层 |
 | `edgefusion/adapters/device_profiles.py` | 设备语义适配入口 | 厂家协议适配层 |
 | `edgefusion/adapters/modbus/profiles/` | Modbus 设备族聚合 profile 与厂家子模块 | 厂家协议适配层 |
-| `edgefusion/adapters/modbus/profiles/vendors/__init__.py` | 厂家 profile 注册与设备族视图聚合入口 | 厂家协议适配层 |
+| `edgefusion/adapters/modbus/profiles/vendors/__init__.py` | 厂家 profile 注册、别名解析与设备族视图聚合入口 | 厂家协议适配层 |
 | `edgefusion/point_tables.py` | 旧点表入口兼容层 | 厂家协议适配层兼容 facade |
 | `edgefusion/register_map.py` | 显式语义映射解析与旧键兼容归一 | 厂家协议适配层 |
+| `edgefusion/device_inventory.py` | 设备清单、候选清单与生命周期动作 | 编排层内的轻量清单组件 |
 | `edgefusion/protocol/registry.py` | 协议初始化、缓存与 endpoint 分派 | 编排 / 组合根 |
 | `edgefusion/protocol/modbus_factory.py` | Modbus 协议组装与 endpoint 归一 | 编排 / 组合根 |
 | `edgefusion/protocol/modbus.py` | Modbus 实现 | 传输协议层 |
 | `edgefusion/transport/modbus_tcp.py` | Modbus TCP 连接承载 | 物理连接层 |
 | `edgefusion/transport/modbus_rtu.py` | Modbus RTU 连接承载 | 物理连接层 |
 | `edgefusion/protocol/mqtt.py` | MQTT 实现 | 传输协议层骨架 |
-| `edgefusion/device_manager.py` | 统一入口 | 编排层，已减少协议细节但仍负责设备侧流程 |
+| `edgefusion/device_manager.py` | 统一入口 | 编排层，聚焦设备侧流程与协议 IO 编排 |
 
 ## 5. 推荐目标形态
 
@@ -228,18 +229,21 @@ MQTT 不应只保留一个协议骨架，而应拆成：
 当前进展：
 
 - 已新增 `adapters/device_profiles.py` 作为设备适配层入口
-- 已新增 `adapters/modbus/profiles/` 承接 Modbus 厂家 profile，按设备族聚合并继续细化到厂家子模块，`vendors/__init__.py` 负责厂家注册与设备族视图聚合，`point_tables.py` 只保留兼容导出
+- 已新增 `adapters/modbus/profiles/` 承接 Modbus 厂家 profile，按设备族聚合并继续细化到厂家子模块，`vendors/__init__.py` 负责厂家注册、别名解析与设备族视图聚合，`point_tables.py` 只保留兼容导出
 - 已新增 `transport/modbus_tcp.py` 作为 Modbus TCP 物理连接承载
 - 已新增 `transport/modbus_rtu.py` 作为 Modbus RTU 物理连接承载
 - 已新增 `protocol/registry.py` 负责协议初始化、缓存与 endpoint 分派
 - 已新增 `protocol/modbus_factory.py` 负责 Modbus protocol + transport 组装和 endpoint 归一
-- `DeviceManager` 已改为优先走适配层入口，并通过 registry + factory 复用默认 endpoint / 派生专用 endpoint
+- 已新增 `device_inventory.py` 负责设备清单、候选清单与生命周期动作
+- `DeviceManager` 已改为优先走适配层入口，并通过 registry + factory 复用默认 endpoint / 派生专用 endpoint，同时把设备清单与生命周期动作委托给 `device_inventory.py`
 - `ModbusProtocol` 已改为依赖显式注入的 transport，而不再自己选择 TCP / RTU 实现
 
 剩余优先事项：
 
 - 继续在 `adapters/modbus/profiles/vendors/` 下补充更多厂家 profile，并通过注册入口统一纳入设备族视图
-- 继续把 `DeviceManager` 里的协议发现刷新和生命周期编排抽到更清晰的 provider / service 边界
+- 新增 profile 时优先补厂家别名、型号别名和明确的默认模型，减少现场配置对内部 model key 的依赖
+- 保持现场手工接入为主，不继续扩重型自动发现体系
+- 继续把 `DeviceManager` 里剩余的设备侧编排收薄，优先保持 `device_inventory.py` 这种轻量边界，而不是拆复杂 provider 树
 
 ### 第二步：补 MQTT 真正的读链路
 
@@ -288,5 +292,7 @@ MQTT 不应只保留一个协议骨架，而应拆成：
 
 - 把厂家适配从设备模型里再剥离一点
 - 把传输协议和物理连接彻底拆开
+
+在工控机现场调试场景下，不建议把“自动发现”做成重型框架；更实际的方向是保持手工接入主导，同时把设备清单、生命周期、协议编排边界收清楚。
 
 后续所有重构和新协议接入，都建议以这个分层为准，而不要再把“设备类型 = 协议类型 = 连接方式”绑定在一起。

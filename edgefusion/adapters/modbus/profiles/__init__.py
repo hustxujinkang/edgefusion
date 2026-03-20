@@ -16,9 +16,27 @@ MODBUS_POINT_TABLES = {
 }
 
 
-def get_modbus_point_table(model: str, fallback_model: str | None = "generic_charger") -> dict:
-    if model in MODBUS_POINT_TABLES:
-        return MODBUS_POINT_TABLES[model]
+def resolve_modbus_model_key(
+    model: str | None,
+    *,
+    vendor: str | None = None,
+    device_type: str | None = None,
+) -> str | None:
+    if model and model in MODBUS_POINT_TABLES:
+        return model
+    return vendors.resolve_vendor_model(model, vendor=vendor, device_type=device_type)
+
+
+def get_modbus_point_table(
+    model: str | None,
+    *,
+    vendor: str | None = None,
+    device_type: str | None = None,
+    fallback_model: str | None = "generic_charger",
+) -> dict:
+    resolved_model = resolve_modbus_model_key(model, vendor=vendor, device_type=device_type)
+    if resolved_model and resolved_model in MODBUS_POINT_TABLES:
+        return MODBUS_POINT_TABLES[resolved_model]
     if fallback_model:
         return MODBUS_POINT_TABLES.get(fallback_model, {})
     return {}
@@ -155,14 +173,18 @@ def get_modbus_charger_connector_mode_map(model: str | None) -> Dict[Any, Any]:
 
 def get_modbus_device_default_maps(device_info: Dict[str, Any]) -> Dict[str, Any]:
     model = device_info.get("model")
-    if not model:
-        return {}
+    device_type = device_info.get("type")
+    vendor = device_info.get("vendor") or device_info.get("manufacturer")
 
-    table = get_modbus_point_table(str(model), fallback_model=None)
+    table = get_modbus_point_table(
+        str(model) if model is not None else None,
+        vendor=str(vendor) if vendor is not None else None,
+        device_type=str(device_type) if device_type is not None else None,
+        fallback_model=None,
+    )
     if not table:
         return {}
 
-    device_type = device_info.get("type")
     defaults: Dict[str, Any] = {}
 
     if device_type == "charging_station":
@@ -212,4 +234,5 @@ __all__ = [
     "get_modbus_device_default_maps",
     "get_modbus_gun_registers",
     "get_modbus_point_table",
+    "resolve_modbus_model_key",
 ]

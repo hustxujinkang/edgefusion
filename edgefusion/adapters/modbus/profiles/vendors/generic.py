@@ -5,6 +5,7 @@ GENERIC_POINT_TABLES = {
     "generic_grid_meter": {
         "name": "通用总表",
         "manufacturer": "Generic",
+        "model_aliases": ["generic grid meter", "通用总表"],
         "device_type": "grid_meter",
         "status_map": {
             0: "offline",
@@ -19,6 +20,7 @@ GENERIC_POINT_TABLES = {
     "generic_pv": {
         "name": "通用光伏逆变器",
         "manufacturer": "Generic",
+        "model_aliases": ["generic pv", "generic inverter", "通用光伏", "通用光伏逆变器"],
         "device_type": "pv",
         "status_map": {
             0: "offline",
@@ -41,6 +43,7 @@ GENERIC_POINT_TABLES = {
     "generic_storage": {
         "name": "通用储能",
         "manufacturer": "Generic",
+        "model_aliases": ["generic storage", "generic ess", "通用储能"],
         "device_type": "energy_storage",
         "mode_map": {
             0: "idle",
@@ -66,6 +69,7 @@ GENERIC_POINT_TABLES = {
     "generic_charger": {
         "name": "通用充电桩",
         "manufacturer": "Generic",
+        "model_aliases": ["generic charger", "通用充电桩"],
         "device_type": "charging_station",
         "connector_count": 1,
         "connector_status_map": {
@@ -88,4 +92,17 @@ GENERIC_POINT_TABLES = {
             "emergency_stop": {"addr": 5, "fixed_value": 2},
         },
     },
+}
+
+
+GENERIC_VENDOR_PROFILE = {
+    "vendor": "generic",
+    "aliases": ["generic", "通用"],
+    "default_models": {
+        "grid_meter": "generic_grid_meter",
+        "pv": "generic_pv",
+        "energy_storage": "generic_storage",
+        "charging_station": "generic_charger",
+    },
+    "tables": GENERIC_POINT_TABLES,
 }

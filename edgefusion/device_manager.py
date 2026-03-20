@@ -1,8 +1,8 @@
 # 设备管理模块
 from typing import Dict, Any, List, Optional
 from .adapters import normalize_device_profile, normalize_field_value, resolve_protocol_read, resolve_protocol_write
-from .charger_layout import build_connector_views
 from .device_semantics import field_is_readable, field_is_writable
+from .device_inventory import DeviceInventory
 from .protocol import (
     ProtocolBase,
     MQTTProtocol,
@@ -26,8 +26,9 @@ class DeviceManager:
         """
         self.logger = get_logger('DeviceManager')
         self.config = config
-        self.devices: Dict[str, Dict[str, Any]] = {}
-        self.device_candidates: Dict[str, Dict[str, Any]] = {}
+        self.inventory = DeviceInventory(normalize_device_profile)
+        self.devices = self.inventory.devices
+        self.device_candidates = self.inventory.device_candidates
         self.protocol_registry = ProtocolRegistry(
             config,
             protocol_builders={
@@ -42,19 +43,12 @@ class DeviceManager:
         self.endpoint_protocols: Dict[str, ProtocolBase] = self.protocol_registry.endpoint_protocols
 
     def _normalize_device_info(self, device_info: Dict[str, Any]) -> Dict[str, Any]:
-        return normalize_device_profile(device_info)
+        return self.inventory.normalize(device_info)
 
     def _get_connector_view(self, device_id: str, *, include_candidates: bool = False) -> Optional[Dict[str, Any]]:
-        collections = [self.devices.values()]
         if include_candidates:
-            collections.append(self.device_candidates.values())
-
-        for collection in collections:
-            for device_info in collection:
-                for connector in build_connector_views(device_info):
-                    if connector.get("device_id") == device_id:
-                        return connector
-        return None
+            return self.inventory.get_candidate(device_id)
+        return self.inventory.get_device(device_id)
 
     def _get_io_device_id(self, device_info: Dict[str, Any], fallback_device_id: str) -> str:
         if device_info.get('io_device_id') is not None:
@@ -123,31 +117,11 @@ class DeviceManager:
             self.logger.error(f"{protocol_name}协议候选设备刷新失败: {e}")
             return {}
 
-        stale_candidate_ids = [
-            device_id
-            for device_id, device_info in self.device_candidates.items()
-            if device_info.get('protocol') == protocol_name
-        ]
-        for device_id in stale_candidate_ids:
-            del self.device_candidates[device_id]
-
-        if clear_active:
-            stale_device_ids = [
-                device_id
-                for device_id, device_info in self.devices.items()
-                if device_info.get('protocol') == protocol_name
-            ]
-            for device_id in stale_device_ids:
-                del self.devices[device_id]
-
-        for device_id, device_info in discovered_candidates.items():
-            self.device_candidates[device_id] = device_info
-
-        candidates = {
-            device_id: device_info
-            for device_id, device_info in self.device_candidates.items()
-            if device_info.get('protocol') == protocol_name
-        }
+        candidates = self.inventory.replace_protocol_candidates(
+            protocol_name,
+            discovered_candidates,
+            clear_active=clear_active,
+        )
         self.logger.info(f"{protocol_name}协议刷新后共有{len(candidates)}个候选设备")
         return candidates
 
@@ -167,15 +141,7 @@ class DeviceManager:
             self.logger.error(f"{protocol_name}协议设备刷新失败: {e}")
             return {}
 
-        stale_device_ids = [
-            device_id
-            for device_id, device_info in self.devices.items()
-            if device_info.get('protocol') == protocol_name
-        ]
-        for device_id in stale_device_ids:
-            del self.devices[device_id]
-
-        self.devices.update(discovered_devices)
+        self.inventory.replace_protocol_devices(protocol_name, discovered_devices)
         self.logger.info(f"{protocol_name}协议刷新后共有{len(discovered_devices)}个设备")
         return discovered_devices
 
@@ -188,31 +154,22 @@ class DeviceManager:
         if protocol_name not in self.protocols:
             return False
 
-        normalized = self._normalize_device_info(device_info)
-        if device_id in self.devices:
-            return False
-
-        self.device_candidates[device_id] = normalized
-        self.logger.info(f"注册候选设备: {device_id}")
-        return True
+        if self.inventory.register_candidate(device_info):
+            self.logger.info(f"注册候选设备: {device_id}")
+            return True
+        return False
 
     def unregister_device_candidate(self, device_id: str) -> bool:
-        if device_id in self.devices:
-            return False
-        if device_id in self.device_candidates:
-            del self.device_candidates[device_id]
+        if self.inventory.unregister_candidate(device_id):
             self.logger.info(f"删除候选设备: {device_id}")
             return True
         return False
 
     def activate_device(self, device_id: str) -> bool:
-        device_info = self.device_candidates.get(device_id)
-        if not device_info or device_id in self.devices:
-            return False
-
-        self.devices[device_id] = device_info
-        self.logger.info(f"激活设备: {device_id}")
-        return True
+        if self.inventory.activate_device(device_id):
+            self.logger.info(f"激活设备: {device_id}")
+            return True
+        return False
     
     def register_device(self, device_info: Dict[str, Any]) -> bool:
         """手动注册设备
@@ -233,9 +190,10 @@ class DeviceManager:
             return False
         
         # 注册设备
-        self.devices[device_id] = self._normalize_device_info(device_info)
-        self.logger.info(f"手动注册设备: {device_id}")
-        return True
+        if self.inventory.register_device(device_info):
+            self.logger.info(f"手动注册设备: {device_id}")
+            return True
+        return False
     
     def unregister_device(self, device_id: str) -> bool:
         """注销设备
@@ -246,8 +204,7 @@ class DeviceManager:
         Returns:
             bool: 注销是否成功
         """
-        if device_id in self.devices:
-            del self.devices[device_id]
+        if self.inventory.unregister_device(device_id):
             self.logger.info(f"注销设备: {device_id}")
             return True
         return False
@@ -261,19 +218,13 @@ class DeviceManager:
         Returns:
             Optional[Dict[str, Any]]: 设备信息，不存在返回None
         """
-        device = self.devices.get(device_id)
-        if device:
-            return device
-        return self._get_connector_view(device_id)
+        return self.inventory.get_device(device_id)
 
     def get_device_candidate(self, device_id: str) -> Optional[Dict[str, Any]]:
-        device = self.device_candidates.get(device_id)
-        if device:
-            return device
-        return self._get_connector_view(device_id, include_candidates=True)
+        return self.inventory.get_candidate(device_id)
 
     def is_device_connected(self, device_id: str) -> bool:
-        return device_id in self.devices or self._get_connector_view(device_id) is not None
+        return self.inventory.is_connected(device_id)
     
     def get_devices(self, device_type: Optional[str] = None) -> List[Dict[str, Any]]:
         """获取设备列表
@@ -284,22 +235,13 @@ class DeviceManager:
         Returns:
             List[Dict[str, Any]]: 设备列表
         """
-        if device_type:
-            return [device for device in self.devices.values() if device.get('type') == device_type]
-        return list(self.devices.values())
+        return self.inventory.get_devices(device_type)
 
     def get_device_candidates(self, device_type: Optional[str] = None) -> List[Dict[str, Any]]:
-        if device_type:
-            return [device for device in self.device_candidates.values() if device.get('type') == device_type]
-        return list(self.device_candidates.values())
+        return self.inventory.get_candidates(device_type)
 
     def get_device_connectors(self, device_id: str, include_candidates: bool = False) -> List[Dict[str, Any]]:
-        device_info = self.devices.get(device_id)
-        if device_info is None and include_candidates:
-            device_info = self.device_candidates.get(device_id)
-        if not device_info:
-            return []
-        return build_connector_views(device_info)
+        return self.inventory.get_connectors(device_id, include_candidates=include_candidates)
     
     def read_device_data(self, device_id: str, register: str) -> Optional[Any]:
         """读取设备数据
@@ -386,11 +328,7 @@ class DeviceManager:
         Returns:
             str: 设备状态
         """
-        device_info = self.get_device(device_id)
-        if not device_info:
-            return 'Unknown'
-        
-        return device_info.get('status', 'Unknown')
+        return self.inventory.get_device_status(device_id)
     
     def update_device_status(self, device_id: str, status: str):
         """更新设备状态
@@ -400,5 +338,5 @@ class DeviceManager:
             status: 新状态
         """
         if device_id in self.devices:
-            self.devices[device_id]['status'] = 'offline' if str(status).lower() == 'offline' else 'online'
+            self.inventory.update_device_status(device_id, status)
             self.logger.info(f"更新设备状态: {device_id} -> {status}")

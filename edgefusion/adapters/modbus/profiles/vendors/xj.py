@@ -5,6 +5,7 @@ XJ_POINT_TABLES = {
     "xj_dc_120kw": {
         "name": "许继 120kW 直流充电桩",
         "manufacturer": "许继",
+        "model_aliases": ["xj dc 120kw", "xj 120kw", "许继120kw", "许继 120kw", "120kw", "120 kw"],
         "device_type": "charging_station",
         "max_power": 120,
         "max_guns": 2,
@@ -60,6 +61,7 @@ XJ_POINT_TABLES = {
     "xj_dc_240kw": {
         "name": "许继 240kW 直流充电桩",
         "manufacturer": "许继",
+        "model_aliases": ["xj dc 240kw", "xj 240kw", "许继240kw", "许继 240kw", "240kw", "240 kw"],
         "device_type": "charging_station",
         "max_power": 240,
         "max_guns": 2,
@@ -99,4 +101,12 @@ XJ_POINT_TABLES = {
             "power_absolute": {"addr": 0x4000, "cmd": "write_registers"},
         },
     },
+}
+
+
+XJ_VENDOR_PROFILE = {
+    "vendor": "xj",
+    "aliases": ["xj", "xuji", "许继"],
+    "default_models": {},
+    "tables": XJ_POINT_TABLES,
 }
