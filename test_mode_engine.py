@@ -230,6 +230,44 @@ def test_export_protect_can_use_active_charger_with_numeric_status_code():
     ]
 
 
+def test_export_protect_skips_devices_without_declared_write_capability():
+    state = build_site_state(
+        [
+            _snapshot("grid-meter-1", "grid_meter", {"power": -9000, "status": "online"}),
+            _snapshot(
+                "storage-1",
+                "energy_storage",
+                {
+                    "status": "online",
+                    "mode": "idle",
+                    "power": 0,
+                    "soc": 40,
+                    "max_charge_power": 3000,
+                },
+            )
+            | {"capabilities": {"readable_fields": ["soc", "power", "mode", "max_charge_power"], "writable_fields": []}},
+            _snapshot(
+                "charger-1:1",
+                "charging_connector",
+                {"status": "charging", "power": 2000, "max_power": 3500, "min_power": 1000},
+            )
+            | {"capabilities": {"readable_fields": ["status", "power", "max_power"], "writable_fields": []}},
+            _snapshot(
+                "pv-1",
+                "pv",
+                {"status": "online", "power": 8000, "power_limit": 8000, "min_power_limit": 0},
+            )
+            | {"capabilities": {"readable_fields": ["power", "power_limit"], "writable_fields": []}},
+        ],
+        {"max_data_age_seconds": 30},
+    )
+
+    plan = plan_export_protect(state, {"export_limit_w": 5000})
+
+    assert plan.actions == []
+    assert plan.remaining_gap_w == 4000
+
+
 def test_mode_controller_uses_collector_snapshots_and_executes_export_actions():
     collector = _FakeCollector(
         [
@@ -361,6 +399,49 @@ def test_mode_controller_stays_monitor_only_without_real_control_path():
     assert result["mode"] == "business_normal"
     assert result["reason"] == "no_export_control_capability"
     assert result["actions"] == []
+    assert device_manager.writes == []
+
+
+def test_mode_controller_stays_monitor_only_when_device_capabilities_disallow_control():
+    collector = _FakeCollector(
+        [
+            _snapshot("grid-meter-1", "grid_meter", {"power": -9000, "status": "online"}),
+            {
+                **_snapshot(
+                    "storage-1",
+                    "energy_storage",
+                    {"status": "online", "power": 0, "soc": 40, "max_charge_power": 2500},
+                ),
+                "capabilities": {"readable_fields": ["soc", "power", "max_charge_power"], "writable_fields": []},
+            },
+        ]
+    )
+    device_manager = _FakeDeviceManager(
+        {
+            "grid-meter-1": {"device_id": "grid-meter-1", "source": "real", "status": "online"},
+            "storage-1": {
+                "device_id": "storage-1",
+                "type": "energy_storage",
+                "source": "real",
+                "status": "online",
+                "capabilities": {"readable_fields": ["soc", "power", "max_charge_power"], "writable_fields": []},
+            },
+        }
+    )
+    controller = ModeControllerStrategy(
+        {
+            "state": {"max_data_age_seconds": 30},
+            "mode": {"export_limit_w": 5000, "export_enter_ratio": 1.0},
+        },
+        device_manager,
+        collector,
+    )
+
+    controller.start()
+    result = controller.execute()
+
+    assert result["mode"] == "business_normal"
+    assert result["reason"] == "no_export_control_capability"
     assert device_manager.writes == []
 
 

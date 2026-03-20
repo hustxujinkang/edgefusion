@@ -1,6 +1,7 @@
 from typing import Any, Dict
 
 from ..control import arbitrate_mode, build_site_state, plan_export_protect
+from ..device_semantics import snapshot_supports_write
 from ..logger import get_logger
 from .base import StrategyBase
 
@@ -353,20 +354,24 @@ class ModeControllerStrategy(StrategyBase):
             device_type = snapshot.get("device_type")
             data = snapshot.get("data", {})
             status = str(data.get("status", "online")).lower()
-            if status == "offline":
+            if status in {"offline", "fault", "error"}:
                 continue
 
-            if device_type == "energy_storage" and _int_value(data.get("max_charge_power")) > 0:
+            if (
+                device_type == "energy_storage"
+                and snapshot_supports_write(snapshot, "mode", "charge_power")
+                and _int_value(data.get("max_charge_power")) > 0
+            ):
                 return True
             if device_type in {"charging_station", "charging_connector"}:
                 current_power = _int_value(data.get("power"))
                 max_power = _int_value(data.get("max_power"), current_power)
-                if current_power > 0 and max_power > current_power:
+                if snapshot_supports_write(snapshot, "power_limit") and current_power > 0 and max_power > current_power:
                     return True
             if device_type == "pv":
                 current_limit = _int_value(data.get("power_limit"), _int_value(data.get("power")))
                 min_limit = _int_value(data.get("min_power_limit"))
-                if current_limit > min_limit:
+                if snapshot_supports_write(snapshot, "power_limit") and current_limit > min_limit:
                     return True
 
         return False
@@ -460,6 +465,8 @@ class ModeControllerStrategy(StrategyBase):
                         "status": device_info.get("status", "online"),
                     }
                 )
+                if "capabilities" in device_info:
+                    base_info["capabilities"] = device_info.get("capabilities")
                 if "pile_id" in device_info:
                     base_info["pile_id"] = device_info.get("pile_id")
                 if "connector_id" in device_info:

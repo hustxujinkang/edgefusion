@@ -13,6 +13,11 @@ POINT_TABLES = {
         "name": "通用总表",
         "manufacturer": "Generic",
         "device_type": "grid_meter",
+        "status_map": {
+            0: "offline",
+            1: "online",
+            2: "fault",
+        },
         "telemetry": {
             "power": _reg(50001, "i32", 1, "W"),
             "status": _reg(50002, "u16", 1, ""),
@@ -22,6 +27,11 @@ POINT_TABLES = {
         "name": "通用光伏逆变器",
         "manufacturer": "Generic",
         "device_type": "pv",
+        "status_map": {
+            0: "offline",
+            1: "online",
+            2: "fault",
+        },
         "telemetry": {
             "power": _reg(51001, "i32", 1, "W"),
             "energy": _reg(51002, "u32", 0.1, "kWh"),
@@ -39,6 +49,12 @@ POINT_TABLES = {
         "name": "通用储能",
         "manufacturer": "Generic",
         "device_type": "energy_storage",
+        "mode_map": {
+            0: "idle",
+            1: "charge",
+            2: "discharge",
+            3: "auto",
+        },
         "telemetry": {
             "soc": _reg(52001, "u16", 1, "%"),
             "power": _reg(52002, "i32", 1, "W"),
@@ -59,6 +75,11 @@ POINT_TABLES = {
         "manufacturer": "Generic",
         "device_type": "charging_station",
         "connector_count": 1,
+        "connector_status_map": {
+            0: "idle",
+            1: "charging",
+            2: "fault",
+        },
         "connector_telemetry": {
             "voltage": _reg(0, "u16", 0.1, "V"),
             "current": _reg(1, "u16", 0.01, "A"),
@@ -80,6 +101,14 @@ POINT_TABLES = {
         "device_type": "charging_station",
         "max_power": 120,
         "max_guns": 2,
+        "connector_status_map": {
+            0: "idle",
+            1: "idle",
+            2: "idle",
+            3: "charging",
+            4: "fault",
+            5: "fault",
+        },
         "registers": {
             "pile": {
                 "gun_count": _reg(0x1000, "u16", 1, "个"),
@@ -127,6 +156,14 @@ POINT_TABLES = {
         "device_type": "charging_station",
         "max_power": 240,
         "max_guns": 2,
+        "connector_status_map": {
+            0: "idle",
+            1: "idle",
+            2: "idle",
+            3: "charging",
+            4: "fault",
+            5: "fault",
+        },
         "registers": {
             "pile": {
                 "gun_count": _reg(0x1000, "u16", 1, "个"),
@@ -293,6 +330,26 @@ def get_charger_connector_control_map(model: str | None, connector_id: int) -> D
     return derived_controls
 
 
+def get_charger_connector_status_map(model: str | None) -> Dict[Any, Any]:
+    if not model:
+        return {}
+    table = get_point_table(model, fallback_model=None)
+    mapping = table.get("connector_status_map")
+    if isinstance(mapping, dict):
+        return dict(mapping)
+    return {}
+
+
+def get_charger_connector_mode_map(model: str | None) -> Dict[Any, Any]:
+    if not model:
+        return {}
+    table = get_point_table(model, fallback_model=None)
+    mapping = table.get("connector_mode_map")
+    if isinstance(mapping, dict):
+        return dict(mapping)
+    return {}
+
+
 def get_device_default_maps(device_info: Dict[str, Any]) -> Dict[str, Any]:
     model = device_info.get("model")
     if not model:
@@ -325,5 +382,13 @@ def get_device_default_maps(device_info: Dict[str, Any]) -> Dict[str, Any]:
             for key, value in control.items()
             if _register_like(value)
         }
+
+    status_map = table.get("status_map")
+    if isinstance(status_map, dict):
+        defaults["status_map"] = dict(status_map)
+
+    mode_map = table.get("mode_map")
+    if isinstance(mode_map, dict):
+        defaults["mode_map"] = dict(mode_map)
 
     return defaults

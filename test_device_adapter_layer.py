@@ -51,3 +51,20 @@ def test_normalize_device_profile_keeps_explicit_mapping_over_defaults():
         "scale": 1,
         "unit": "",
     }
+
+
+def test_normalize_device_profile_derives_capabilities_from_default_maps():
+    device = normalize_device_profile(
+        {
+            "device_id": "charger_1",
+            "type": "charging_connector",
+            "protocol": "modbus",
+            "telemetry_map": {"status": {"addr": 5}, "power": {"addr": 2}},
+            "control_map": {"power_limit": {"addr": 41001}, "stop_charging": {"addr": 5, "fixed_value": 0}},
+        }
+    )
+
+    assert device["capabilities"]["readable_fields"] == ["power", "status"]
+    assert device["capabilities"]["writable_fields"] == ["power_limit", "stop_charging"]
+    assert device["capabilities"]["supports"]["power_limit_control"] is True
+    assert device["capabilities"]["supports"]["stop_charging_control"] is True

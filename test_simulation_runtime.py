@@ -126,9 +126,12 @@ def test_data_collector_captures_grid_meter_and_control_capability_fields_from_s
     assert by_type["grid_meter"]["data"]["power"] == -1000
     assert by_type["pv"]["data"]["power_limit"] == 7000
     assert by_type["energy_storage"]["data"]["max_charge_power"] == 1000
+    assert "power_limit" in by_type["pv"]["capabilities"]["writable_fields"]
+    assert "charge_power" in by_type["energy_storage"]["capabilities"]["writable_fields"]
     assert connector_snapshot["device_id"] == "charger_0:1"
     assert connector_snapshot["pile_id"] == "charger_0"
     assert connector_snapshot["connector_id"] == 1
+    assert "power_limit" in connector_snapshot["capabilities"]["writable_fields"]
     assert connector_snapshot["data"]["max_power"] == 5000
     assert connector_snapshot["data"]["min_power"] == 1000
 

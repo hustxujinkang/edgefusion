@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field
 from typing import Any
 
+from ..device_semantics import snapshot_supports_write
 from .site_state import SiteState
 
 
@@ -36,7 +37,7 @@ def _snapshot_data(state: SiteState, device_type: str) -> list[dict[str, Any]]:
 
 
 def _is_online(snapshot: dict[str, Any]) -> bool:
-    return str(snapshot.get("data", {}).get("status", "online")).lower() != "offline"
+    return str(snapshot.get("data", {}).get("status", "online")).lower() not in {"offline", "fault", "error"}
 
 
 def _int_value(value: Any, default: int = 0) -> int:
@@ -99,6 +100,8 @@ def plan_export_protect(state: SiteState, config: dict[str, Any] | None = None) 
     for snapshot in _snapshot_data(state, "energy_storage"):
         if remaining_gap_w <= 0 or not _is_online(snapshot):
             continue
+        if not snapshot_supports_write(snapshot, "mode", "charge_power"):
+            continue
 
         data = snapshot.get("data", {})
         soc = float(data.get("soc", 0) or 0)
@@ -125,6 +128,8 @@ def plan_export_protect(state: SiteState, config: dict[str, Any] | None = None) 
     charger_current_power_by_device: dict[str, int] = {}
     for snapshot in _snapshot_data(state, ("charging_connector", "charging_station")):
         if not _is_online(snapshot):
+            continue
+        if not snapshot_supports_write(snapshot, "power_limit"):
             continue
 
         data = snapshot.get("data", {})
@@ -161,6 +166,8 @@ def plan_export_protect(state: SiteState, config: dict[str, Any] | None = None) 
 
     for snapshot in _snapshot_data(state, "pv"):
         if remaining_gap_w <= 0 or not _is_online(snapshot):
+            continue
+        if not snapshot_supports_write(snapshot, "power_limit"):
             continue
 
         data = snapshot.get("data", {})

@@ -126,13 +126,80 @@ class SiteSimulator:
                 "source": "simulated",
                 "status": "offline" if raw_status == "offline" else "online",
             }
+            if simulator.device_type == "grid_meter":
+                device_info["capabilities"] = {
+                    "declared": True,
+                    "readable_fields": ["power", "status"],
+                    "writable_fields": [],
+                    "supports": {},
+                }
+            elif simulator.device_type == "pv":
+                device_info["capabilities"] = {
+                    "declared": True,
+                    "readable_fields": [
+                        "power",
+                        "energy",
+                        "voltage",
+                        "current",
+                        "status",
+                        "power_limit",
+                        "min_power_limit",
+                    ],
+                    "writable_fields": ["power_limit"],
+                    "supports": {"power_limit_control": True},
+                }
+            elif simulator.device_type == "energy_storage":
+                device_info["capabilities"] = {
+                    "declared": True,
+                    "readable_fields": [
+                        "status",
+                        "soc",
+                        "power",
+                        "voltage",
+                        "current",
+                        "mode",
+                        "max_charge_power",
+                        "max_discharge_power",
+                    ],
+                    "writable_fields": ["mode", "charge_power", "discharge_power"],
+                    "supports": {
+                        "mode_control": True,
+                        "charge_power_control": True,
+                        "discharge_power_control": True,
+                    },
+                }
             if simulator.device_type == "charging_station":
+                device_info["capabilities"] = {
+                    "declared": False,
+                    "readable_fields": [],
+                    "writable_fields": [],
+                    "supports": {},
+                }
                 device_info["connector_count"] = 1
                 device_info["connectors"] = [
                     {
                         "device_id": f"{device_id}:1",
                         "connector_id": 1,
                         "io_device_id": device_id,
+                        "capabilities": {
+                            "declared": True,
+                            "readable_fields": [
+                                "status",
+                                "power",
+                                "energy",
+                                "voltage",
+                                "current",
+                                "power_limit",
+                                "max_power",
+                                "min_power",
+                            ],
+                            "writable_fields": ["power_limit", "start_charging", "stop_charging"],
+                            "supports": {
+                                "power_limit_control": True,
+                                "start_charging_control": True,
+                                "stop_charging_control": True,
+                            },
+                        },
                     }
                 ]
             info[device_id] = device_info

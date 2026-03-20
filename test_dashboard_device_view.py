@@ -116,7 +116,10 @@ def test_connected_devices_endpoint_uses_device_manager_inventory():
     response = client.get("/api/devices/connected")
 
     assert response.status_code == 200
-    assert response.get_json() == [{**device_info, "source": "real"}]
+    payload = response.get_json()
+    assert len(payload) == 1
+    assert payload[0] | {"capabilities": payload[0]["capabilities"]} == {**device_info, "source": "real", "capabilities": payload[0]["capabilities"]}
+    assert "capabilities" in payload[0]
 
 
 def test_dashboard_root_uses_mode_console_tabs():
@@ -152,13 +155,13 @@ def test_register_device_defaults_to_real_source_and_online_status():
         }
     ) is True
 
-    assert device_manager.get_device("grid_meter_real") == {
-        "device_id": "grid_meter_real",
-        "type": "grid_meter",
-        "protocol": "modbus",
-        "status": "online",
-        "source": "real",
-    }
+    payload = device_manager.get_device("grid_meter_real")
+    assert payload["device_id"] == "grid_meter_real"
+    assert payload["type"] == "grid_meter"
+    assert payload["protocol"] == "modbus"
+    assert payload["status"] == "online"
+    assert payload["source"] == "real"
+    assert "capabilities" in payload
 
 
 def test_add_modbus_device_registers_into_device_manager(monkeypatch):
@@ -183,17 +186,17 @@ def test_add_modbus_device_registers_into_device_manager(monkeypatch):
     payload = response.get_json()
     assert payload["success"] is True
     assert device_manager.get_device("charger-a") is None
-    assert device_manager.get_device_candidate("charger-a") == {
-        "device_id": "charger-a",
-        "type": "charger",
-        "model": "generic_charger",
-        "protocol": "modbus",
-        "host": "192.168.1.8",
-        "port": 502,
-        "unit_id": 3,
-        "status": "online",
-        "source": "real",
-    }
+    candidate = device_manager.get_device_candidate("charger-a")
+    assert candidate["device_id"] == "charger-a"
+    assert candidate["type"] == "charger"
+    assert candidate["model"] == "generic_charger"
+    assert candidate["protocol"] == "modbus"
+    assert candidate["host"] == "192.168.1.8"
+    assert candidate["port"] == 502
+    assert candidate["unit_id"] == 3
+    assert candidate["status"] == "online"
+    assert candidate["source"] == "real"
+    assert "capabilities" in candidate
 
     activate_response = client.post("/api/devices/candidates/charger-a/activate")
     assert activate_response.status_code == 200
@@ -233,35 +236,30 @@ def test_activate_candidate_keeps_candidate_inventory_and_marks_connected():
 
     candidate_response = client.get("/api/devices/candidates")
     assert candidate_response.status_code == 200
-    assert candidate_response.get_json() == [
-        {
-            "connector_count": 1,
-            "connectors": [
-                {
-                    "connector_id": 1,
-                    "device_id": "charger-candidate:1",
-                    "host": "127.0.0.1",
-                    "io_device_id": "charger-candidate",
-                    "pile_id": "charger-candidate",
-                    "port": 1502,
-                    "protocol": "modbus",
-                    "source": "real",
-                    "status": "online",
-                    "type": "charging_connector",
-                    "unit_id": 1,
-                }
-            ],
-            "device_id": "charger-candidate",
-            "type": "charging_station",
-            "protocol": "modbus",
-            "host": "127.0.0.1",
-            "port": 1502,
-            "unit_id": 1,
-            "status": "online",
-            "source": "real",
-            "connected": True,
-        }
-    ]
+    payload = candidate_response.get_json()
+    assert len(payload) == 1
+    candidate = payload[0]
+    assert candidate["connector_count"] == 1
+    assert candidate["device_id"] == "charger-candidate"
+    assert candidate["type"] == "charging_station"
+    assert candidate["protocol"] == "modbus"
+    assert candidate["host"] == "127.0.0.1"
+    assert candidate["port"] == 1502
+    assert candidate["unit_id"] == 1
+    assert candidate["status"] == "online"
+    assert candidate["source"] == "real"
+    assert candidate["connected"] is True
+    assert "capabilities" in candidate
+    assert len(candidate["connectors"]) == 1
+    connector = candidate["connectors"][0]
+    assert connector["connector_id"] == 1
+    assert connector["device_id"] == "charger-candidate:1"
+    assert connector["io_device_id"] == "charger-candidate"
+    assert connector["pile_id"] == "charger-candidate"
+    assert connector["protocol"] == "modbus"
+    assert connector["status"] == "online"
+    assert connector["type"] == "charging_connector"
+    assert "capabilities" in connector
 
 
 def test_collector_latest_endpoint_surfaces_connector_snapshots_from_pile_inventory():

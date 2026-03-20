@@ -1,7 +1,10 @@
 from typing import Any, Dict, List
+from .device_semantics import build_device_capabilities
 from .point_tables import (
     get_charger_connector_control_map,
     get_charger_connector_count,
+    get_charger_connector_mode_map,
+    get_charger_connector_status_map,
     get_charger_connector_telemetry_map,
 )
 
@@ -52,11 +55,19 @@ def build_connector_views(device_info: Dict[str, Any]) -> List[Dict[str, Any]]:
         connector_device_id = connector.get("device_id", build_connector_device_id(pile_id, connector_id))
         default_telemetry_map = get_charger_connector_telemetry_map(device_info.get("model"), connector_id)
         default_control_map = get_charger_connector_control_map(device_info.get("model"), connector_id)
+        default_status_map = get_charger_connector_status_map(device_info.get("model"))
+        default_mode_map = get_charger_connector_mode_map(device_info.get("model"))
+        explicit_capabilities = connector.get("capabilities")
         connector_view = dict(device_info)
+        connector_view.pop("capabilities", None)
         if default_telemetry_map:
             connector_view["telemetry_map"] = default_telemetry_map
         if default_control_map:
             connector_view["control_map"] = default_control_map
+        if default_status_map:
+            connector_view["status_map"] = default_status_map
+        if default_mode_map:
+            connector_view["mode_map"] = default_mode_map
         connector_view.update(connector)
         if default_telemetry_map and isinstance(connector.get("telemetry_map"), dict):
             merged_telemetry_map = dict(default_telemetry_map)
@@ -71,6 +82,9 @@ def build_connector_views(device_info: Dict[str, Any]) -> List[Dict[str, Any]]:
         connector_view["pile_id"] = pile_id
         connector_view["connector_id"] = connector_id
         connector_view.setdefault("io_device_id", pile_id)
+        if explicit_capabilities is not None:
+            connector_view["capabilities"] = explicit_capabilities
+        connector_view["capabilities"] = build_device_capabilities(connector_view)
         connector_views.append(connector_view)
 
     return connector_views

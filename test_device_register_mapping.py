@@ -335,7 +335,7 @@ def test_charger_model_point_table_expands_connectors_and_maps_gun_registers():
     connectors = device_manager.get_device_connectors("charger_real")
     assert [connector["device_id"] for connector in connectors] == ["charger_real:1", "charger_real:2"]
     assert device_manager.read_device_data("charger_real:2", "power") == 7200
-    assert device_manager.read_device_data("charger_real:2", "status") == 3
+    assert device_manager.read_device_data("charger_real:2", "status") == "charging"
     assert protocol.read_calls == [
         ("charger_real", {"addr": 0x210E, "type": "u32", "scale": 0.001, "unit": "kW"}),
         ("charger_real", {"addr": 0x2100, "type": "u16", "scale": 1, "unit": ""}),
@@ -520,3 +520,44 @@ def test_collector_keeps_missing_grid_power_as_none_for_trust_checks():
 
     assert collected[0]["data"]["power"] is None
     assert collected[0]["data"]["status"] == "online"
+
+
+def test_device_manager_normalizes_status_and_mode_fields_from_profile_maps():
+    protocol = FakeProtocol(
+        {
+            ("pv_real", 51005): 2,
+            ("storage_real", 52005): 3,
+            ("charger_real", 0x2100): 3,
+        }
+    )
+    device_manager = DeviceManager({})
+    device_manager.protocols["modbus"] = protocol
+
+    assert device_manager.register_device(
+        {
+            "device_id": "pv_real",
+            "type": "pv",
+            "model": "generic_pv",
+            "protocol": "modbus",
+        }
+    ) is True
+    assert device_manager.register_device(
+        {
+            "device_id": "storage_real",
+            "type": "energy_storage",
+            "model": "generic_storage",
+            "protocol": "modbus",
+        }
+    ) is True
+    assert device_manager.register_device(
+        {
+            "device_id": "charger_real",
+            "type": "charging_station",
+            "model": "xj_dc_120kw",
+            "protocol": "modbus",
+        }
+    ) is True
+
+    assert device_manager.read_device_data("pv_real", "status") == "fault"
+    assert device_manager.read_device_data("storage_real", "mode") == "auto"
+    assert device_manager.read_device_data("charger_real:2", "status") == "charging"

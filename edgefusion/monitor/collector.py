@@ -32,6 +32,14 @@ class DataCollector:
 
     def _read_field(self, device_id: str, field: str) -> Any:
         return self.device_manager.read_device_data(device_id, field)
+
+    def _device_capabilities(self, device_id: str) -> Dict[str, Any]:
+        device_info = self.device_manager.get_device(device_id)
+        if isinstance(device_info, dict):
+            capabilities = device_info.get("capabilities")
+            if isinstance(capabilities, dict):
+                return dict(capabilities)
+        return {"declared": False, "readable_fields": [], "writable_fields": [], "supports": {}}
     
     def start(self) -> bool:
         """启动数据采集
@@ -125,12 +133,14 @@ class DataCollector:
     def _collect_grid_meter_data(self, device_id: str, timestamp: datetime) -> Dict[str, Any]:
         try:
             power = self._read_field(device_id, 'power')
-            status = self._read_field(device_id, 'status') or 'unknown'
+            device_info = self.device_manager.get_device(device_id) or {}
+            status = self._read_field(device_id, 'status') or device_info.get('status', 'unknown')
 
             return {
                 'device_id': device_id,
                 'device_type': 'grid_meter',
                 'timestamp': timestamp.isoformat(),
+                'capabilities': self._device_capabilities(device_id),
                 'data': {
                     'power': power,
                     'status': status,
@@ -164,7 +174,8 @@ class DataCollector:
             energy = self._read_field(device_id, 'energy')
             voltage = self._read_field(device_id, 'voltage')
             current = self._read_field(device_id, 'current')
-            status = self._read_field(device_id, 'status') or 'unknown'
+            device_info = self.device_manager.get_device(device_id) or {}
+            status = self._read_field(device_id, 'status') or device_info.get('status', 'unknown')
             power_limit = self._read_field(device_id, 'power_limit')
             min_power_limit = self._read_field(device_id, 'min_power_limit')
             
@@ -172,6 +183,7 @@ class DataCollector:
                 'device_id': device_id,
                 'device_type': 'pv',
                 'timestamp': timestamp.isoformat(),
+                'capabilities': self._device_capabilities(device_id),
                 'data': {
                     'power': power,
                     'energy': energy,
@@ -213,13 +225,17 @@ class DataCollector:
             power = self._read_field(device_id, 'power')
             voltage = self._read_field(device_id, 'voltage')
             current = self._read_field(device_id, 'current')
+            device_info = self.device_manager.get_device(device_id) or {}
+            status = self._read_field(device_id, 'status') or device_info.get('status', 'unknown')
             mode = self._read_field(device_id, 'mode') or 'unknown'
             
             return {
                 'device_id': device_id,
                 'device_type': 'energy_storage',
                 'timestamp': timestamp.isoformat(),
+                'capabilities': self._device_capabilities(device_id),
                 'data': {
+                    'status': status,
                     'soc': soc,
                     'power': power,
                     'voltage': voltage,
@@ -259,7 +275,7 @@ class DataCollector:
         for connector in self.device_manager.get_device_connectors(pile_id):
             connector_device_id = connector['device_id']
             try:
-                status = self._read_field(connector_device_id, 'status') or 'Available'
+                status = self._read_field(connector_device_id, 'status') or connector.get('status', 'unknown')
                 power = self._read_field(connector_device_id, 'power')
                 energy = self._read_field(connector_device_id, 'energy')
                 voltage = self._read_field(connector_device_id, 'voltage')
@@ -275,6 +291,7 @@ class DataCollector:
                         'pile_id': pile_id,
                         'connector_id': connector['connector_id'],
                         'timestamp': timestamp.isoformat(),
+                        'capabilities': self._device_capabilities(connector_device_id),
                         'data': {
                             'status': status,
                             'power': power,
@@ -296,8 +313,9 @@ class DataCollector:
                         'pile_id': pile_id,
                         'connector_id': connector['connector_id'],
                         'timestamp': timestamp.isoformat(),
+                        'capabilities': self._device_capabilities(connector_device_id),
                         'data': {
-                            'status': 'Error',
+                            'status': 'fault',
                             'power': None,
                             'energy': None,
                             'voltage': None,

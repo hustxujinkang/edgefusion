@@ -1,7 +1,8 @@
 # 设备管理模块
 from typing import Dict, Any, List, Optional
-from .adapters import normalize_device_profile, resolve_protocol_read, resolve_protocol_write
+from .adapters import normalize_device_profile, normalize_field_value, resolve_protocol_read, resolve_protocol_write
 from .charger_layout import build_connector_views
+from .device_semantics import field_is_readable, field_is_writable
 from .protocol import (
     ProtocolBase,
     MQTTProtocol,
@@ -376,10 +377,15 @@ class DeviceManager:
             if not protocol.is_connected:
                 self.logger.warning(f"协议未连接: {protocol_name}")
                 return None
+
+            if not field_is_readable(device_info, register):
+                self.logger.warning(f"设备字段不可读: {device_id}.{register}")
+                return None
             
             io_device_id = self._get_io_device_id(device_info, device_id)
             protocol_register = resolve_protocol_read(device_info, register)
-            return protocol.read_data(io_device_id, protocol_register)
+            raw_value = protocol.read_data(io_device_id, protocol_register)
+            return normalize_field_value(device_info, register, raw_value)
         except Exception as e:
             self.logger.error(f"读取设备数据失败: {e}")
             return None
@@ -409,6 +415,10 @@ class DeviceManager:
 
             if not protocol.is_connected:
                 self.logger.warning(f"协议未连接: {protocol_name}")
+                return False
+
+            if not field_is_writable(device_info, register):
+                self.logger.warning(f"设备字段不可写: {device_id}.{register}")
                 return False
             
             io_device_id = self._get_io_device_id(device_info, device_id)

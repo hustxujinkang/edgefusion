@@ -122,12 +122,13 @@ flowchart TD
 - 光、储、充、总表已经有统一设备模型雏形
 - 充电桩已经实现“桩接入、枪控制”
 - `DeviceManager` 已经承担了统一语义入口
+- 设备适配层已经补上 `status/mode` 归一和 `capabilities` 声明，策略层不再直接依赖厂家原始状态码判断可控性
 
 ### 3.2 还没有拆干净的部分
 
 - `point_tables.py` 仍同时承担了“设备模型描述”和“协议映射描述”
 - `register_map.py` 已经是适配层的一部分，但仍保留兼容入口
-- `Modbus` 已经拆出 `modbus_factory.py + protocol/modbus.py + transport/modbus_tcp.py + transport/modbus_rtu.py`，但点表适配和厂家状态映射仍有继续收口空间
+- `Modbus` 已经拆出 `modbus_factory.py + protocol/modbus.py + transport/modbus_tcp.py + transport/modbus_rtu.py`，但点表适配和厂家 profile 组织仍有继续收口空间
 - `MQTTProtocol` 仍然是骨架，没有形成完整的“适配层 + 协议层 + 连接层”
 - `DeviceManager` 已经不再自己拼 Modbus transport，但仍是当前的协议编排入口，后续可以继续向独立 provider / registry 收口
 
@@ -234,7 +235,7 @@ MQTT 不应只保留一个协议骨架，而应拆成：
 
 - 继续弱化 `point_tables` 的设备模型角色
 - 继续明确 `register_map` 的兼容边界
-- 继续把厂家状态码、寄存器区等差异从业务层视角中剥离出去
+- 继续把厂家 profile 从大一统点表拆成更清晰的模块边界
 
 ### 第二步：补 MQTT 真正的读链路
 
@@ -249,17 +250,17 @@ MQTT 不应只保留一个协议骨架，而应拆成：
 - 语义字段到 topic 的映射
 - 控制 topic / payload 模板
 
-### 第三步：补厂家级状态映射和能力声明
+### 第三步：继续拆厂家 profile 和能力配置组织
 
 目标：
 
-- 避免控制策略直接依赖厂家原始状态码
+- 让 `point_tables/register_map` 不再承担过多“兼容入口”职责
 
 重点：
 
-- 统一 `online/offline/fault/charging/idle`
-- 明确哪些设备字段可读、哪些命令可写
-- 明确哪些控制能力在现场不可用
+- 把厂家映射从统一大文件里继续拆分
+- 保留 `status_map/mode_map/capabilities` 这类适配层元数据
+- 让新设备接入优先补 profile，而不是补业务层分支
 
 ## 8. 对后续接入速度的意义
 
