@@ -57,8 +57,26 @@ class DeviceManager:
             self.protocols['simulation'] = SimulationProtocol(self.config['simulation'])
 
     def _build_modbus_endpoint_key(self, device_info: Dict[str, Any]) -> Optional[str]:
+        transport_mode = str(device_info.get('transport', device_info.get('mode', 'tcp'))).lower()
+        if transport_mode in {'rtu', 'serial'}:
+            serial_port = device_info.get('serial_port')
+            if serial_port is None and isinstance(device_info.get('port'), str):
+                serial_port = device_info.get('port')
+            if serial_port is None:
+                return None
+
+            timeout = device_info.get('timeout', self.config.get('modbus', {}).get('timeout', 5))
+            baudrate = int(device_info.get('baudrate', self.config.get('modbus', {}).get('baudrate', 9600)))
+            bytesize = int(device_info.get('bytesize', self.config.get('modbus', {}).get('bytesize', 8)))
+            parity = str(device_info.get('parity', self.config.get('modbus', {}).get('parity', 'N')))
+            stopbits = int(device_info.get('stopbits', self.config.get('modbus', {}).get('stopbits', 1)))
+            return (
+                f"modbus+rtu://{serial_port}"
+                f"?baudrate={baudrate}&bytesize={bytesize}&parity={parity}&stopbits={stopbits}&timeout={timeout}"
+            )
+
         host = device_info.get('host')
-        port = device_info.get('port')
+        port = device_info.get('port', self.config.get('modbus', {}).get('port', 502))
         if host is None or port is None:
             return None
         timeout = device_info.get('timeout', self.config.get('modbus', {}).get('timeout', 5))
@@ -76,13 +94,28 @@ class DeviceManager:
         protocol = self.endpoint_protocols.get(endpoint_key)
         if protocol is None:
             timeout = device_info.get('timeout', self.config.get('modbus', {}).get('timeout', 5))
-            protocol = ModbusProtocol(
-                {
-                    'host': device_info['host'],
-                    'port': int(device_info['port']),
+            transport_mode = str(device_info.get('transport', device_info.get('mode', 'tcp'))).lower()
+            if transport_mode in {'rtu', 'serial'}:
+                serial_port = device_info.get('serial_port')
+                if serial_port is None and isinstance(device_info.get('port'), str):
+                    serial_port = device_info.get('port')
+                protocol_config = {
+                    'transport': 'rtu',
+                    'serial_port': serial_port,
+                    'baudrate': int(device_info.get('baudrate', self.config.get('modbus', {}).get('baudrate', 9600))),
+                    'bytesize': int(device_info.get('bytesize', self.config.get('modbus', {}).get('bytesize', 8))),
+                    'parity': str(device_info.get('parity', self.config.get('modbus', {}).get('parity', 'N'))),
+                    'stopbits': int(device_info.get('stopbits', self.config.get('modbus', {}).get('stopbits', 1))),
                     'timeout': timeout,
                 }
-            )
+            else:
+                protocol_config = {
+                    'transport': 'tcp',
+                    'host': device_info['host'],
+                    'port': int(device_info.get('port', self.config.get('modbus', {}).get('port', 502))),
+                    'timeout': timeout,
+                }
+            protocol = ModbusProtocol(protocol_config)
             self.endpoint_protocols[endpoint_key] = protocol
 
         if not protocol.is_connected:

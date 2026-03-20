@@ -416,6 +416,67 @@ def test_device_manager_uses_dedicated_modbus_protocol_per_endpoint(monkeypatch)
     assert endpoint_protocols[1].read_calls == [("2", {"addr": 30001, "type": "i32"})]
 
 
+def test_device_manager_uses_dedicated_modbus_protocol_per_rtu_endpoint(monkeypatch):
+    EndpointProtocol.instances = []
+    monkeypatch.setattr(device_manager_module, "ModbusProtocol", EndpointProtocol)
+
+    device_manager = DeviceManager({"modbus": {"host": "base-host", "port": 502, "timeout": 5}})
+    base_protocol = device_manager.protocols["modbus"]
+    base_protocol.connected = True
+
+    assert device_manager.register_device(
+        {
+            "device_id": "storage_rtu_a",
+            "type": "energy_storage",
+            "protocol": "modbus",
+            "transport": "rtu",
+            "serial_port": "COM3",
+            "baudrate": 9600,
+            "bytesize": 8,
+            "parity": "N",
+            "stopbits": 1,
+            "unit_id": 3,
+            "telemetry_map": {"soc": {"addr": 32001, "type": "u16"}},
+        }
+    ) is True
+    assert device_manager.register_device(
+        {
+            "device_id": "storage_rtu_b",
+            "type": "energy_storage",
+            "protocol": "modbus",
+            "transport": "rtu",
+            "serial_port": "COM4",
+            "baudrate": 19200,
+            "bytesize": 7,
+            "parity": "E",
+            "stopbits": 2,
+            "unit_id": 4,
+            "telemetry_map": {"soc": {"addr": 32001, "type": "u16"}},
+        }
+    ) is True
+
+    device_manager.read_device_data("storage_rtu_a", "soc")
+    device_manager.read_device_data("storage_rtu_b", "soc")
+
+    endpoint_protocols = [instance for instance in EndpointProtocol.instances if instance is not base_protocol]
+    assert [
+        (
+            instance.config["transport"],
+            instance.config["serial_port"],
+            instance.config["baudrate"],
+            instance.config["bytesize"],
+            instance.config["parity"],
+            instance.config["stopbits"],
+        )
+        for instance in endpoint_protocols
+    ] == [
+        ("rtu", "COM3", 9600, 8, "N", 1),
+        ("rtu", "COM4", 19200, 7, "E", 2),
+    ]
+    assert endpoint_protocols[0].read_calls == [("3", {"addr": 32001, "type": "u16"})]
+    assert endpoint_protocols[1].read_calls == [("4", {"addr": 32001, "type": "u16"})]
+
+
 def test_collector_keeps_missing_grid_power_as_none_for_trust_checks():
     protocol = FakeProtocol({("grid_real", "30002"): "online"})
     device_manager = DeviceManager({})
