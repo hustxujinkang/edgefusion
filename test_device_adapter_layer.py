@@ -31,6 +31,15 @@ def test_modbus_profile_module_exposes_builtin_model_tables():
     assert defaults["control_map"]["power_limit"]["addr"] == 41001
 
 
+def test_modbus_profile_package_exposes_device_family_submodules():
+    from edgefusion.adapters.modbus.profiles import charger, grid_meter, pv, storage
+
+    assert "generic_grid_meter" in grid_meter.GRID_METER_POINT_TABLES
+    assert "generic_pv" in pv.PV_POINT_TABLES
+    assert "generic_storage" in storage.STORAGE_POINT_TABLES
+    assert "xj_dc_120kw" in charger.CHARGER_POINT_TABLES
+
+
 def test_point_tables_compatibility_facade_reexports_modbus_profiles():
     from edgefusion.adapters.modbus.profiles import (
         MODBUS_POINT_TABLES,
