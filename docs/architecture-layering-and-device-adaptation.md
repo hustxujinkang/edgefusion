@@ -114,7 +114,7 @@ flowchart TD
 
 ## 3. 当前项目的实际状态
 
-当前项目的方向是对的，但分层还没有完全拆干净。
+当前项目的方向是对的，但分层仍在演进中。
 
 ### 3.1 已经比较合理的部分
 
@@ -125,9 +125,9 @@ flowchart TD
 
 ### 3.2 还没有拆干净的部分
 
-- `point_tables.py` 同时承担了“设备模型描述”和“协议映射描述”
-- `register_map.py` 已经是适配层的一部分，但还没有和设备模型明确隔离
-- `ModbusProtocol` 当前同时承担了“Modbus 协议语义”和“TCP 连接实现”
+- `point_tables.py` 仍同时承担了“设备模型描述”和“协议映射描述”
+- `register_map.py` 已经是适配层的一部分，但仍保留兼容入口
+- `ModbusProtocol` 已拆出 `transport/modbus_tcp.py`，但 Modbus 语义与连接管理仍有继续收口空间
 - `MQTTProtocol` 仍然是骨架，没有形成完整的“适配层 + 协议层 + 连接层”
 - README 中写了支持 `Modbus RTU`，但当前代码实际还没有 RTU 客户端实现
 
@@ -142,9 +142,11 @@ flowchart TD
 | `edgefusion/control/export_protect.py` | 站级控制 | 设备模型层消费方 |
 | `edgefusion/strategy/mode_controller.py` | 模式控制 | 设备模型层消费方 |
 | `edgefusion/charger_layout.py` | 设备视图展开 | 设备模型层 |
+| `edgefusion/adapters/device_profiles.py` | 设备语义适配入口 | 厂家协议适配层 |
 | `edgefusion/point_tables.py` | 型号点表 | 厂家协议适配层 |
 | `edgefusion/register_map.py` | 语义到协议映射 | 厂家协议适配层 |
-| `edgefusion/protocol/modbus.py` | Modbus 实现 | 传输协议层 + 部分物理连接层 |
+| `edgefusion/protocol/modbus.py` | Modbus 实现 | 传输协议层 |
+| `edgefusion/transport/modbus_tcp.py` | Modbus TCP 连接承载 | 物理连接层 |
 | `edgefusion/protocol/mqtt.py` | MQTT 实现 | 传输协议层骨架 |
 | `edgefusion/device_manager.py` | 统一入口 | 编排层，不应长期承载过多协议细节 |
 
@@ -217,11 +219,18 @@ MQTT 不应只保留一个协议骨架，而应拆成：
 - 从代码结构上把“点表适配”和“TCP 连接”再拉开一点
 - 为后续 RTU 留出位置
 
-优先事项：
+当前进展：
 
-- 明确 `point_tables` 是厂家适配层，不是设备模型层
-- 明确 `register_map` 是语义翻译层
-- 把 `ModbusProtocol` 中和连接介质强绑定的部分逐步下沉
+- 已新增 `adapters/device_profiles.py` 作为设备适配层入口
+- 已新增 `transport/modbus_tcp.py` 作为 Modbus TCP 物理连接承载
+- `DeviceManager` 已改为优先走适配层入口
+- `ModbusProtocol` 已改为依赖 transport，而不再直接持有 `ModbusTcpClient`
+
+剩余优先事项：
+
+- 继续弱化 `point_tables` 的设备模型角色
+- 继续明确 `register_map` 的兼容边界
+- 为 `ModbusRtuTransport` 预留统一入口
 
 ### 第二步：补 Modbus RTU
 

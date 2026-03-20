@@ -1,14 +1,14 @@
 # Modbus协议实现
 from typing import Dict, Any, Optional
-from pymodbus.client import ModbusTcpClient
 from ..logger import get_logger
+from ..transport import ModbusTcpTransport
 from .base import ProtocolBase
 
 
 class ModbusProtocol(ProtocolBase):
     """Modbus协议实现"""
     
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: Dict[str, Any], transport: Any = None):
         """初始化Modbus协议实例
         
         Args:
@@ -18,8 +18,24 @@ class ModbusProtocol(ProtocolBase):
         self.host = config.get('host', 'localhost')
         self.port = config.get('port', 502)
         self.timeout = config.get('timeout', 5)
-        self.client = None
+        self.transport = transport or ModbusTcpTransport(self.host, port=self.port, timeout=self.timeout)
         self.logger = get_logger('ModbusProtocol')
+
+    @property
+    def client(self) -> Any:
+        return self.transport
+
+    @client.setter
+    def client(self, value: Any):
+        self.transport = value
+
+    def _transport_connected(self) -> bool:
+        connection_state = getattr(self.transport, "is_connected", None)
+        if callable(connection_state):
+            return bool(connection_state())
+        if connection_state is not None:
+            return bool(connection_state)
+        return bool(self.connected)
     
     def connect(self) -> bool:
         """连接Modbus设备
@@ -28,8 +44,7 @@ class ModbusProtocol(ProtocolBase):
             bool: 连接是否成功
         """
         try:
-            self.client = ModbusTcpClient(self.host, port=self.port, timeout=self.timeout)
-            self.connected = self.client.connect()
+            self.connected = bool(self.transport.connect())
             return self.connected
         except Exception as e:
             self.logger.error("Modbus连接失败: %s", e)
@@ -43,8 +58,8 @@ class ModbusProtocol(ProtocolBase):
             bool: 断开是否成功
         """
         try:
-            if self.client:
-                self.client.close()
+            if self.transport:
+                self.transport.disconnect()
             self.connected = False
             return True
         except Exception as e:
@@ -117,7 +132,7 @@ class ModbusProtocol(ProtocolBase):
         Returns:
             Optional[Any]: 读取的数据，失败返回None
         """
-        if not self.connected:
+        if not self._transport_connected():
             return None
         
         try:
@@ -126,7 +141,7 @@ class ModbusProtocol(ProtocolBase):
             reg_addr = self._resolve_register_address(register_def)
             count = self._get_read_count(register_def)
 
-            response = self.client.read_holding_registers(reg_addr, count, slave=slave_id)
+            response = self.transport.read_holding_registers(reg_addr, count, slave=slave_id)
             
             if response.isError():
                 return None
@@ -147,11 +162,11 @@ class ModbusProtocol(ProtocolBase):
         Returns:
             Optional[list]: 寄存器值列表，失败返回None
         """
-        if not self.connected:
+        if not self._transport_connected():
             return None
         
         try:
-            response = self.client.read_holding_registers(addr, count, slave=slave_id)
+            response = self.transport.read_holding_registers(addr, count, slave=slave_id)
             if response.isError():
                 self.logger.warning("读取寄存器失败: addr=%s, count=%s", addr, count)
                 return None
@@ -171,14 +186,14 @@ class ModbusProtocol(ProtocolBase):
         Returns:
             bool: 是否成功
         """
-        if not self.connected:
+        if not self._transport_connected():
             return False
         
         try:
             from pymodbus.payload import BinaryPayloadBuilder
             from pymodbus.constants import Endian
             
-            response = self.client.write_registers(addr, values, slave=slave_id)
+            response = self.transport.write_registers(addr, values, slave=slave_id)
             if response.isError():
                 self.logger.warning("写寄存器失败: addr=%s, values=%s", addr, values)
                 return False
@@ -219,7 +234,7 @@ class ModbusProtocol(ProtocolBase):
         Returns:
             bool: 写入是否成功
         """
-        if not self.connected:
+        if not self._transport_connected():
             return False
         
         try:
@@ -234,7 +249,7 @@ class ModbusProtocol(ProtocolBase):
             reg_value = register_def.get("fixed_value", value)
             reg_value = self._encode_single_value(register_def, reg_value)
 
-            response = self.client.write_register(reg_addr, reg_value, slave=slave_id)
+            response = self.transport.write_register(reg_addr, reg_value, slave=slave_id)
 
             if response.isError():
                 return False
@@ -257,7 +272,7 @@ class ModbusProtocol(ProtocolBase):
         for i in range(1, 10):
             try:
                 # 尝试读取设备ID
-                response = self.client.read_holding_registers(0, 1, slave=i)
+                response = self.transport.read_holding_registers(0, 1, slave=i)
                 if not response.isError():
                     devices[str(i)] = {
                         'device_id': str(i),

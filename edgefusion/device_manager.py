@@ -1,9 +1,8 @@
 # 设备管理模块
 from typing import Dict, Any, List, Optional
-from .charger_layout import build_connector_views, normalize_charger_pile
-from .point_tables import get_device_default_maps
+from .adapters import normalize_device_profile, resolve_protocol_read, resolve_protocol_write
+from .charger_layout import build_connector_views
 from .protocol import ProtocolBase, ModbusProtocol, MQTTProtocol, OCPPProtocol, SimulationProtocol
-from .register_map import resolve_read_register, resolve_write_register
 from .logger import get_logger
 
 
@@ -25,25 +24,7 @@ class DeviceManager:
         self._init_protocols()
 
     def _normalize_device_info(self, device_info: Dict[str, Any]) -> Dict[str, Any]:
-        normalized = dict(device_info)
-        default_maps = get_device_default_maps(normalized)
-        for key, value in default_maps.items():
-            if key in {"telemetry_map", "control_map"} and isinstance(value, dict):
-                merged = dict(value)
-                if isinstance(normalized.get(key), dict):
-                    merged.update(normalized[key])
-                normalized[key] = merged
-            else:
-                normalized.setdefault(key, value)
-
-        protocol_name = normalized.get('protocol')
-
-        if normalized.get('source') not in {'real', 'simulated'}:
-            normalized['source'] = 'simulated' if protocol_name == 'simulation' else 'real'
-
-        raw_status = str(normalized.get('status', 'online')).lower()
-        normalized['status'] = 'offline' if raw_status == 'offline' else 'online'
-        return normalize_charger_pile(normalized)
+        return normalize_device_profile(device_info)
 
     def _get_connector_view(self, device_id: str, *, include_candidates: bool = False) -> Optional[Dict[str, Any]]:
         collections = [self.devices.values()]
@@ -397,7 +378,7 @@ class DeviceManager:
                 return None
             
             io_device_id = self._get_io_device_id(device_info, device_id)
-            protocol_register = resolve_read_register(device_info, register)
+            protocol_register = resolve_protocol_read(device_info, register)
             return protocol.read_data(io_device_id, protocol_register)
         except Exception as e:
             self.logger.error(f"读取设备数据失败: {e}")
@@ -431,7 +412,7 @@ class DeviceManager:
                 return False
             
             io_device_id = self._get_io_device_id(device_info, device_id)
-            protocol_register = resolve_write_register(device_info, register)
+            protocol_register = resolve_protocol_write(device_info, register)
             return protocol.write_data(io_device_id, protocol_register, value)
         except Exception as e:
             self.logger.error(f"写入设备数据失败: {e}")

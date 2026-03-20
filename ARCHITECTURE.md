@@ -14,6 +14,7 @@
 │   ├── main.py              # 主程序入口
 │   ├── config.py            # 配置管理
 │   ├── device_manager.py    # 设备管理模块
+│   ├── adapters/            # 厂家协议适配层
 │   ├── point_tables.py      # 型号点表定义
 │   ├── protocol/            # 协议支持模块
 │   │   ├── __init__.py
@@ -21,6 +22,7 @@
 │   │   ├── modbus.py        # Modbus协议实现
 │   │   ├── mqtt.py          # MQTT协议实现
 │   │   └── ocpp.py          # OCPP协议实现（充电桩）
+│   ├── transport/           # 物理连接层
 │   ├── strategy/            # 控制策略模块
 │   │   ├── __init__.py
 │   │   ├── base.py          # 策略基类
@@ -50,8 +52,10 @@
 | 主程序 | 系统启动和管理 | edgefusion/main.py |
 | 配置管理 | 系统配置加载和管理 | edgefusion/config.py |
 | 设备管理 | 设备注册、发现和管理 | edgefusion/device_manager.py |
+| 设备适配 | 厂家点表、语义读写映射 | edgefusion/adapters/ |
 | 点表定义 | 各型号设备的寄存器映射 | edgefusion/point_tables.py |
 | 协议支持 | 各类设备协议的实现 | edgefusion/protocol/ |
+| 物理连接 | TCP、串口、Broker连接承载 | edgefusion/transport/ |
 | 控制策略 | 协同控制策略的实现 | edgefusion/strategy/ |
 | 监控系统 | 数据采集、存储和展示 | edgefusion/monitor/ |
 | 工具模块 | 通用工具函数 | edgefusion/utils/ |
@@ -102,12 +106,13 @@ POINT_TABLES = {
 
 ### 4.2 统一控制映射
 
-系统通过 `point_tables.py` 将不同型号设备展开为统一的语义采集点和控制命令，再由 `DeviceManager` 和协议层执行真实读写。
+系统通过 `point_tables.py` 和 `adapters/device_profiles.py` 将不同型号设备展开为统一的语义采集点和控制命令，再由 `DeviceManager`、协议层和传输层执行真实读写。
 
 统一控制链路的特点：
 - 业务层和监控面板都只使用语义字段和语义命令
-- 点表负责把型号差异翻译成 `telemetry_map` / `control_map`
-- 协议层负责把单寄存器写和复杂控制报文落到真实设备
+- 点表和适配层负责把型号差异翻译成 `telemetry_map` / `control_map`
+- 协议层负责 Modbus/MQTT/OCPP 等协议语义
+- 传输层负责 TCP 等物理连接承载
 - 充电桩按“桩接入、枪控制”建模，策略控制和人工控制共用同一条下发链路
 
 ### 4.3 设备管理
