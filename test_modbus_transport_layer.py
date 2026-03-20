@@ -1,4 +1,7 @@
+import pytest
+
 from edgefusion.protocol.modbus import ModbusProtocol
+from edgefusion.protocol.modbus_factory import create_modbus_protocol
 from edgefusion.transport.modbus_rtu import ModbusRtuTransport
 
 
@@ -39,6 +42,9 @@ class DummyTransport:
     def write_registers(self, addr, values, slave):
         self.write_batch_calls.append((addr, values, slave))
         return _Response()
+
+    def describe_endpoint(self):
+        return {"transport": "test", "address": "dummy"}
 
 
 class DummySerialClient:
@@ -85,6 +91,16 @@ def test_modbus_protocol_uses_transport_object_instead_of_tcp_client():
     assert transport.read_calls == [(50001, 2, 7)]
 
 
+def test_modbus_protocol_requires_explicit_transport():
+    with pytest.raises(ValueError, match="transport"):
+        ModbusProtocol({})
+
+
+def test_modbus_factory_rejects_rtu_without_serial_port():
+    with pytest.raises(ValueError, match="serial_port"):
+        create_modbus_protocol({"transport": "rtu"})
+
+
 def test_modbus_rtu_transport_wraps_serial_client(monkeypatch):
     monkeypatch.setattr(
         "edgefusion.transport.modbus_rtu.ModbusSerialClient",
@@ -118,7 +134,7 @@ def test_modbus_rtu_transport_wraps_serial_client(monkeypatch):
     assert transport.is_connected is False
 
 
-def test_modbus_protocol_uses_rtu_transport_for_serial_configs(monkeypatch):
+def test_modbus_factory_creates_rtu_protocol_for_serial_configs(monkeypatch):
     created = {}
 
     class SpyRtuTransport:
@@ -156,9 +172,12 @@ def test_modbus_protocol_uses_rtu_transport_for_serial_configs(monkeypatch):
         def is_connected(self):
             return self.connected
 
-    monkeypatch.setattr("edgefusion.protocol.modbus.ModbusRtuTransport", SpyRtuTransport)
+        def describe_endpoint(self):
+            return {"transport": "rtu", "address": created["serial_port"]}
 
-    protocol = ModbusProtocol(
+    monkeypatch.setattr("edgefusion.protocol.modbus_factory.ModbusRtuTransport", SpyRtuTransport)
+
+    protocol = create_modbus_protocol(
         {
             "transport": "rtu",
             "serial_port": "COM7",
@@ -180,3 +199,14 @@ def test_modbus_protocol_uses_rtu_transport_for_serial_configs(monkeypatch):
     }
     assert protocol.connect() is True
     assert protocol.transport.is_connected is True
+
+
+def test_modbus_protocol_discovery_uses_transport_endpoint_metadata():
+    transport = DummyTransport()
+    protocol = ModbusProtocol({}, transport=transport)
+    protocol.connect()
+
+    devices = protocol.discover_devices()
+
+    assert devices["1"]["transport"] == "test"
+    assert devices["1"]["address"] == "dummy"

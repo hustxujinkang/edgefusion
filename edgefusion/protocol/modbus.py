@@ -1,7 +1,6 @@
 # Modbus协议实现
 from typing import Dict, Any, Optional
 from ..logger import get_logger
-from ..transport import ModbusRtuTransport, ModbusTcpTransport
 from .base import ProtocolBase
 
 
@@ -18,39 +17,10 @@ class ModbusProtocol(ProtocolBase):
         self.host = config.get('host', 'localhost')
         self.port = config.get('port', 502)
         self.timeout = config.get('timeout', 5)
-        self.transport = transport or self._create_transport(config)
+        if transport is None:
+            raise ValueError("ModbusProtocol requires an explicit transport")
+        self.transport = transport
         self.logger = get_logger('ModbusProtocol')
-
-    def _get_transport_mode(self, config: Dict[str, Any]) -> str:
-        transport_mode = str(config.get("transport", config.get("mode", "tcp"))).lower()
-        if transport_mode in {"rtu", "serial"}:
-            return "rtu"
-        return "tcp"
-
-    def _get_serial_port(self, config: Dict[str, Any]) -> str:
-        serial_port = config.get("serial_port")
-        if serial_port:
-            return str(serial_port)
-
-        port = config.get("port")
-        if isinstance(port, str) and port:
-            return port
-
-        return "COM1"
-
-    def _create_transport(self, config: Dict[str, Any]) -> Any:
-        transport_mode = self._get_transport_mode(config)
-        if transport_mode == "rtu":
-            return ModbusRtuTransport(
-                serial_port=self._get_serial_port(config),
-                baudrate=int(config.get("baudrate", 9600)),
-                bytesize=int(config.get("bytesize", 8)),
-                parity=str(config.get("parity", "N")),
-                stopbits=int(config.get("stopbits", 1)),
-                timeout=self.timeout,
-            )
-
-        return ModbusTcpTransport(self.host, port=self.port, timeout=self.timeout)
 
     @property
     def client(self) -> Any:
@@ -305,13 +275,14 @@ class ModbusProtocol(ProtocolBase):
                 # 尝试读取设备ID
                 response = self.transport.read_holding_registers(0, 1, slave=i)
                 if not response.isError():
+                    endpoint = self.transport.describe_endpoint()
                     devices[str(i)] = {
                         'device_id': str(i),
                         'type': 'modbus_device',
-                        'address': f"{self.host}:{self.port}",
                         'slave_id': i,
                         'status': 'online'
                     }
+                    devices[str(i)].update(endpoint)
             except:
                 pass
         

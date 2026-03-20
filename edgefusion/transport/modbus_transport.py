@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Any
+from typing import Any, Dict
 
 
 class ModbusTransport(ABC):
@@ -21,6 +21,10 @@ class ModbusTransport(ABC):
 
     @abstractmethod
     def write_registers(self, addr: int, values: list[int], slave: int) -> Any:
+        raise NotImplementedError
+
+    @abstractmethod
+    def describe_endpoint(self) -> Dict[str, Any]:
         raise NotImplementedError
 
     @property

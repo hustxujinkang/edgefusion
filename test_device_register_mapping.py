@@ -375,7 +375,7 @@ def test_charger_model_point_table_maps_power_limit_to_complex_control_command()
 
 def test_device_manager_uses_dedicated_modbus_protocol_per_endpoint(monkeypatch):
     EndpointProtocol.instances = []
-    monkeypatch.setattr(device_manager_module, "ModbusProtocol", EndpointProtocol)
+    monkeypatch.setattr(device_manager_module, "create_modbus_protocol", lambda config, defaults=None: EndpointProtocol(config))
 
     device_manager = DeviceManager({"modbus": {"host": "base-host", "port": 502, "timeout": 5}})
     base_protocol = device_manager.protocols["modbus"]
@@ -418,7 +418,7 @@ def test_device_manager_uses_dedicated_modbus_protocol_per_endpoint(monkeypatch)
 
 def test_device_manager_uses_dedicated_modbus_protocol_per_rtu_endpoint(monkeypatch):
     EndpointProtocol.instances = []
-    monkeypatch.setattr(device_manager_module, "ModbusProtocol", EndpointProtocol)
+    monkeypatch.setattr(device_manager_module, "create_modbus_protocol", lambda config, defaults=None: EndpointProtocol(config))
 
     device_manager = DeviceManager({"modbus": {"host": "base-host", "port": 502, "timeout": 5}})
     base_protocol = device_manager.protocols["modbus"]
@@ -475,6 +475,30 @@ def test_device_manager_uses_dedicated_modbus_protocol_per_rtu_endpoint(monkeypa
     ]
     assert endpoint_protocols[0].read_calls == [("3", {"addr": 32001, "type": "u16"})]
     assert endpoint_protocols[1].read_calls == [("4", {"addr": 32001, "type": "u16"})]
+
+
+def test_device_manager_reuses_base_modbus_protocol_for_default_endpoint(monkeypatch):
+    EndpointProtocol.instances = []
+    monkeypatch.setattr(device_manager_module, "create_modbus_protocol", lambda config, defaults=None: EndpointProtocol(config))
+
+    device_manager = DeviceManager({"modbus": {"host": "base-host", "port": 502, "timeout": 5}})
+    base_protocol = device_manager.protocols["modbus"]
+    base_protocol.connected = True
+
+    assert device_manager.register_device(
+        {
+            "device_id": "grid_meter_default",
+            "type": "grid_meter",
+            "protocol": "modbus",
+            "unit_id": 1,
+            "telemetry_map": {"power": {"addr": 30001, "type": "i32"}},
+        }
+    ) is True
+
+    device_manager.read_device_data("grid_meter_default", "power")
+
+    assert EndpointProtocol.instances == [base_protocol]
+    assert base_protocol.read_calls == [("1", {"addr": 30001, "type": "i32"})]
 
 
 def test_collector_keeps_missing_grid_power_as_none_for_trust_checks():

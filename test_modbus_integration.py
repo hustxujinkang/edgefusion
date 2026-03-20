@@ -12,7 +12,7 @@ import time
 # 添加项目根目录到Python路径
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from edgefusion.protocol import ModbusProtocol
+from edgefusion.protocol import create_modbus_protocol
 
 
 def test_modbus_connection():
@@ -29,7 +29,7 @@ def test_modbus_connection():
     }
     
     print(f"\n1. 连接到Modbus设备 {config['host']}:{config['port']}...")
-    modbus = ModbusProtocol(config)
+    modbus = create_modbus_protocol(config)
     
     if not modbus.connect():
         print("❌ 连接失败！请确保Modbus模拟器已启动")

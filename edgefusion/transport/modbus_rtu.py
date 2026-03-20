@@ -47,6 +47,17 @@ class ModbusRtuTransport(ModbusTransport):
     def write_registers(self, addr: int, values: list[int], slave: int):
         return self.client.write_registers(addr, values, slave=slave)
 
+    def describe_endpoint(self):
+        return {
+            "transport": "rtu",
+            "serial_port": self.serial_port,
+            "baudrate": self.baudrate,
+            "bytesize": self.bytesize,
+            "parity": self.parity,
+            "stopbits": self.stopbits,
+            "address": self.serial_port,
+        }
+
     @property
     def is_connected(self) -> bool:
         return self.connected

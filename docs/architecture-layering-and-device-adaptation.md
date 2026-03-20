@@ -127,9 +127,9 @@ flowchart TD
 
 - `point_tables.py` 仍同时承担了“设备模型描述”和“协议映射描述”
 - `register_map.py` 已经是适配层的一部分，但仍保留兼容入口
-- `ModbusProtocol` 已拆出 `transport/modbus_tcp.py`，但 Modbus 语义与连接管理仍有继续收口空间
+- `Modbus` 已经拆出 `modbus_factory.py + protocol/modbus.py + transport/modbus_tcp.py + transport/modbus_rtu.py`，但点表适配和厂家状态映射仍有继续收口空间
 - `MQTTProtocol` 仍然是骨架，没有形成完整的“适配层 + 协议层 + 连接层”
-- README 中写了支持 `Modbus RTU`，但当前代码实际还没有 RTU 客户端实现
+- `DeviceManager` 已经不再自己拼 Modbus transport，但仍是当前的协议编排入口，后续可以继续向独立 provider / registry 收口
 
 ## 4. 当前代码归位建议
 
@@ -145,8 +145,10 @@ flowchart TD
 | `edgefusion/adapters/device_profiles.py` | 设备语义适配入口 | 厂家协议适配层 |
 | `edgefusion/point_tables.py` | 型号点表 | 厂家协议适配层 |
 | `edgefusion/register_map.py` | 语义到协议映射 | 厂家协议适配层 |
+| `edgefusion/protocol/modbus_factory.py` | Modbus 协议组装与 endpoint 归一 | 编排 / 组合根 |
 | `edgefusion/protocol/modbus.py` | Modbus 实现 | 传输协议层 |
 | `edgefusion/transport/modbus_tcp.py` | Modbus TCP 连接承载 | 物理连接层 |
+| `edgefusion/transport/modbus_rtu.py` | Modbus RTU 连接承载 | 物理连接层 |
 | `edgefusion/protocol/mqtt.py` | MQTT 实现 | 传输协议层骨架 |
 | `edgefusion/device_manager.py` | 统一入口 | 编排层，不应长期承载过多协议细节 |
 
@@ -217,34 +219,24 @@ MQTT 不应只保留一个协议骨架，而应拆成：
 
 - 保持当前已打通的 Modbus TCP 主链路
 - 从代码结构上把“点表适配”和“TCP 连接”再拉开一点
-- 为后续 RTU 留出位置
+- 让 TCP / RTU 进入同一条语义接入通路
 
 当前进展：
 
 - 已新增 `adapters/device_profiles.py` 作为设备适配层入口
 - 已新增 `transport/modbus_tcp.py` 作为 Modbus TCP 物理连接承载
-- `DeviceManager` 已改为优先走适配层入口
-- `ModbusProtocol` 已改为依赖 transport，而不再直接持有 `ModbusTcpClient`
+- 已新增 `transport/modbus_rtu.py` 作为 Modbus RTU 物理连接承载
+- 已新增 `protocol/modbus_factory.py` 负责 Modbus protocol + transport 组装和 endpoint 归一
+- `DeviceManager` 已改为优先走适配层入口，并通过 factory 复用默认 endpoint / 派生专用 endpoint
+- `ModbusProtocol` 已改为依赖显式注入的 transport，而不再自己选择 TCP / RTU 实现
 
 剩余优先事项：
 
 - 继续弱化 `point_tables` 的设备模型角色
 - 继续明确 `register_map` 的兼容边界
-- 为 `ModbusRtuTransport` 预留统一入口
+- 继续把厂家状态码、寄存器区等差异从业务层视角中剥离出去
 
-### 第二步：补 Modbus RTU
-
-目标：
-
-- 让总表、储能、光伏这类串口设备也能接入统一语义链路
-
-最小要求：
-
-- 串口参数配置
-- RTU 客户端
-- 设备管理器支持按串口 endpoint 管理连接
-
-### 第三步：补 MQTT 真正的读链路
+### 第二步：补 MQTT 真正的读链路
 
 目标：
 
@@ -257,7 +249,7 @@ MQTT 不应只保留一个协议骨架，而应拆成：
 - 语义字段到 topic 的映射
 - 控制 topic / payload 模板
 
-### 第四步：补厂家级状态映射和能力声明
+### 第三步：补厂家级状态映射和能力声明
 
 目标：
 

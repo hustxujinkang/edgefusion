@@ -16,10 +16,19 @@ class _ReadResponse:
 
 class FakeClient:
     def __init__(self):
+        self.connected = False
         self.write_register_calls = []
         self.write_registers_calls = []
         self.read_holding_registers_calls = []
         self.read_map = {}
+
+    def connect(self):
+        self.connected = True
+        return True
+
+    def disconnect(self):
+        self.connected = False
+        return True
 
     def write_register(self, addr, value, slave):
         self.write_register_calls.append((addr, value, slave))
@@ -33,12 +42,18 @@ class FakeClient:
         self.read_holding_registers_calls.append((addr, count, slave))
         return _ReadResponse(self.read_map[(addr, count, slave)])
 
+    def describe_endpoint(self):
+        return {"transport": "test", "address": "fake"}
+
+    @property
+    def is_connected(self):
+        return self.connected
+
 
 def test_modbus_protocol_expands_xj_power_limit_command_into_register_batch():
     client = FakeClient()
-    protocol = ModbusProtocol({})
-    protocol.client = client
-    protocol.connected = True
+    protocol = ModbusProtocol({}, transport=client)
+    protocol.connect()
 
     result = protocol.write_data(
         "7",
@@ -66,9 +81,8 @@ def test_modbus_protocol_expands_xj_power_limit_command_into_register_batch():
 
 def test_modbus_protocol_uses_fixed_value_for_single_register_commands():
     client = FakeClient()
-    protocol = ModbusProtocol({})
-    protocol.client = client
-    protocol.connected = True
+    protocol = ModbusProtocol({}, transport=client)
+    protocol.connect()
 
     result = protocol.write_data(
         "3",
@@ -90,9 +104,8 @@ def test_modbus_protocol_decodes_typed_scaled_multi_register_reads():
     client = FakeClient()
     client.read_map[(50001, 2, 5)] = [0xFFFF, 0xEC78]
 
-    protocol = ModbusProtocol({})
-    protocol.client = client
-    protocol.connected = True
+    protocol = ModbusProtocol({}, transport=client)
+    protocol.connect()
 
     result = protocol.read_data(
         "5",

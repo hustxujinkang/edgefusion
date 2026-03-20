@@ -29,6 +29,14 @@ class ModbusTcpTransport(ModbusTransport):
     def write_registers(self, addr: int, values: list[int], slave: int):
         return self.client.write_registers(addr, values, slave=slave)
 
+    def describe_endpoint(self):
+        return {
+            "transport": "tcp",
+            "host": self.host,
+            "port": self.port,
+            "address": f"{self.host}:{self.port}",
+        }
+
     @property
     def is_connected(self) -> bool:
         return self.connected
