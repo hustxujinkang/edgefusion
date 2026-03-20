@@ -157,6 +157,7 @@ python quick_test.py
 - [USAGE.md](USAGE.md) - 联调、模拟器、Web 界面和 API 使用说明
 - [ARCHITECTURE.md](ARCHITECTURE.md) - 系统架构和技术选型说明
 - [docs/device-models-and-adaptation.md](docs/device-models-and-adaptation.md) - 光、储、充、总表当前统一模型与现场接入适配说明
+- [docs/architecture-layering-and-device-adaptation.md](docs/architecture-layering-and-device-adaptation.md) - 设备模型、协议适配、传输和物理连接的目标分层说明
 
 ## 项目结构
 
