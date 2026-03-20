@@ -7,6 +7,7 @@ from .protocol import (
     ProtocolBase,
     MQTTProtocol,
     OCPPProtocol,
+    ProtocolRegistry,
     SimulationProtocol,
     build_modbus_endpoint_key,
     create_modbus_protocol,
@@ -27,9 +28,18 @@ class DeviceManager:
         self.config = config
         self.devices: Dict[str, Dict[str, Any]] = {}
         self.device_candidates: Dict[str, Dict[str, Any]] = {}
-        self.protocols: Dict[str, ProtocolBase] = {}
-        self.endpoint_protocols: Dict[str, ProtocolBase] = {}
-        self._init_protocols()
+        self.protocol_registry = ProtocolRegistry(
+            config,
+            protocol_builders={
+                'mqtt': MQTTProtocol,
+                'ocpp': OCPPProtocol,
+                'simulation': SimulationProtocol,
+            },
+            modbus_protocol_factory=create_modbus_protocol,
+            modbus_endpoint_builder=build_modbus_endpoint_key,
+        )
+        self.protocols: Dict[str, ProtocolBase] = self.protocol_registry.protocols
+        self.endpoint_protocols: Dict[str, ProtocolBase] = self.protocol_registry.endpoint_protocols
 
     def _normalize_device_info(self, device_info: Dict[str, Any]) -> Dict[str, Any]:
         return normalize_device_profile(device_info)
@@ -45,50 +55,6 @@ class DeviceManager:
                     if connector.get("device_id") == device_id:
                         return connector
         return None
-    
-    def _init_protocols(self):
-        """初始化协议实例"""
-        # 初始化Modbus协议
-        if 'modbus' in self.config:
-            self.protocols['modbus'] = create_modbus_protocol(self.config['modbus'])
-            endpoint_key = build_modbus_endpoint_key(self.config['modbus'])
-            self.endpoint_protocols[endpoint_key] = self.protocols['modbus']
-        
-        # 初始化MQTT协议
-        if 'mqtt' in self.config:
-            self.protocols['mqtt'] = MQTTProtocol(self.config['mqtt'])
-        
-        # 初始化OCPP协议
-        if 'ocpp' in self.config:
-            self.protocols['ocpp'] = OCPPProtocol(self.config['ocpp'])
-
-        # 初始化Simulation协议
-        if 'simulation' in self.config:
-            self.protocols['simulation'] = SimulationProtocol(self.config['simulation'])
-
-    def _build_modbus_endpoint_key(self, device_info: Dict[str, Any]) -> Optional[str]:
-        try:
-            return build_modbus_endpoint_key(device_info, defaults=self.config.get('modbus', {}))
-        except ValueError:
-            return None
-
-    def _get_protocol_for_device(self, device_info: Dict[str, Any]) -> Optional[ProtocolBase]:
-        protocol_name = device_info.get('protocol')
-        if protocol_name != 'modbus':
-            return self.protocols.get(protocol_name)
-
-        endpoint_key = self._build_modbus_endpoint_key(device_info)
-        if not endpoint_key:
-            return self.protocols.get('modbus')
-
-        protocol = self.endpoint_protocols.get(endpoint_key)
-        if protocol is None:
-            protocol = create_modbus_protocol(device_info, defaults=self.config.get('modbus', {}))
-            self.endpoint_protocols[endpoint_key] = protocol
-
-        if not protocol.is_connected:
-            protocol.connect()
-        return protocol
 
     def _get_io_device_id(self, device_info: Dict[str, Any], fallback_device_id: str) -> str:
         if device_info.get('io_device_id') is not None:
@@ -101,19 +67,7 @@ class DeviceManager:
     
     def start(self):
         """启动设备管理器"""
-        # 连接所有协议
-        connected_protocols = []
-        for protocol_name, protocol in self.protocols.items():
-            self.logger.info(f"连接{protocol_name}协议...")
-            try:
-                success = protocol.connect()
-                if success:
-                    self.logger.info(f"{protocol_name}协议连接成功")
-                    connected_protocols.append(protocol_name)
-                else:
-                    self.logger.warning(f"{protocol_name}协议连接失败，将在无此协议模式下运行")
-            except Exception as e:
-                self.logger.error(f"{protocol_name}协议连接异常: {e}，将在无此协议模式下运行")
+        connected_protocols = self.protocol_registry.connect_all()
 
         if not connected_protocols:
             self.logger.warning("无可用协议连接，设备发现功能将不可用")
@@ -124,12 +78,7 @@ class DeviceManager:
     
     def stop(self):
         """停止设备管理器"""
-        # 断开所有协议
-        for protocol_name, protocol in self.protocols.items():
-            self.logger.info(f"断开{protocol_name}协议...")
-            protocol.disconnect()
-        for protocol in self.endpoint_protocols.values():
-            protocol.disconnect()
+        self.protocol_registry.disconnect_all()
     
     def discover_devices(self) -> Dict[str, Dict[str, Any]]:
         """发现所有设备
@@ -369,7 +318,7 @@ class DeviceManager:
                 return None
             
             protocol_name = device_info.get('protocol')
-            protocol = self._get_protocol_for_device(device_info)
+            protocol = self.protocol_registry.get_protocol_for_device(device_info)
             if protocol is None:
                 self.logger.warning(f"协议不存在: {protocol_name}")
                 return None
@@ -408,7 +357,7 @@ class DeviceManager:
                 return False
             
             protocol_name = device_info.get('protocol')
-            protocol = self._get_protocol_for_device(device_info)
+            protocol = self.protocol_registry.get_protocol_for_device(device_info)
             if protocol is None:
                 self.logger.warning(f"协议不存在: {protocol_name}")
                 return False

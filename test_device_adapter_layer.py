@@ -40,6 +40,14 @@ def test_modbus_profile_package_exposes_device_family_submodules():
     assert "xj_dc_120kw" in charger.CHARGER_POINT_TABLES
 
 
+def test_modbus_profile_package_exposes_vendor_submodules():
+    from edgefusion.adapters.modbus.profiles.vendors import generic, xj
+
+    assert "generic_grid_meter" in generic.GENERIC_POINT_TABLES
+    assert "generic_charger" in generic.GENERIC_POINT_TABLES
+    assert "xj_dc_120kw" in xj.XJ_POINT_TABLES
+
+
 def test_point_tables_compatibility_facade_reexports_modbus_profiles():
     from edgefusion.adapters.modbus.profiles import (
         MODBUS_POINT_TABLES,

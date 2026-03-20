@@ -1,0 +1,102 @@
+from ..common import reg
+
+
+XJ_POINT_TABLES = {
+    "xj_dc_120kw": {
+        "name": "许继 120kW 直流充电桩",
+        "manufacturer": "许继",
+        "device_type": "charging_station",
+        "max_power": 120,
+        "max_guns": 2,
+        "connector_status_map": {
+            0: "idle",
+            1: "idle",
+            2: "idle",
+            3: "charging",
+            4: "fault",
+            5: "fault",
+        },
+        "registers": {
+            "pile": {
+                "gun_count": reg(0x1000, "u16", 1, "个"),
+                "max_power": reg(0x1001, "u16", 1, "kW"),
+            },
+            "gun1": {
+                "state": reg(0x2000, "u16", 1, ""),
+                "mode": reg(0x2001, "u16", 1, ""),
+                "alarm": reg(0x2002, "u32", 1, ""),
+                "fault": reg(0x2004, "u32", 1, ""),
+                "meter_reading": reg(0x2006, "u32", 0.001, "kWh"),
+                "amount": reg(0x2008, "u32", 0.01, "元"),
+                "energy": reg(0x200A, "u32", 0.001, "kWh"),
+                "duration": reg(0x200C, "u32", 1, "秒"),
+                "power": reg(0x200E, "u32", 0.001, "kW"),
+                "voltage": reg(0x2010, "u16", 0.1, "V"),
+                "current": reg(0x2011, "u16", 0.01, "A"),
+                "soc": reg(0x2012, "u16", 1, "%"),
+                "temperature": reg(0x2013, "u16", 1, "°C"),
+            },
+            "gun2": {
+                "state": reg(0x2100, "u16", 1, ""),
+                "mode": reg(0x2101, "u16", 1, ""),
+                "alarm": reg(0x2102, "u32", 1, ""),
+                "fault": reg(0x2104, "u32", 1, ""),
+                "meter_reading": reg(0x2106, "u32", 0.001, "kWh"),
+                "amount": reg(0x2108, "u32", 0.01, "元"),
+                "energy": reg(0x210A, "u32", 0.001, "kWh"),
+                "duration": reg(0x210C, "u32", 1, "秒"),
+                "power": reg(0x210E, "u32", 0.001, "kW"),
+                "voltage": reg(0x2110, "u16", 0.1, "V"),
+                "current": reg(0x2111, "u16", 0.01, "A"),
+                "soc": reg(0x2112, "u16", 1, "%"),
+                "temperature": reg(0x2113, "u16", 1, "°C"),
+            },
+        },
+        "control": {
+            "power_absolute": {"addr": 0x4000, "cmd": "write_registers"},
+            "power_percentage": {"addr": 0x4000, "cmd": "write_registers"},
+        },
+    },
+    "xj_dc_240kw": {
+        "name": "许继 240kW 直流充电桩",
+        "manufacturer": "许继",
+        "device_type": "charging_station",
+        "max_power": 240,
+        "max_guns": 2,
+        "connector_status_map": {
+            0: "idle",
+            1: "idle",
+            2: "idle",
+            3: "charging",
+            4: "fault",
+            5: "fault",
+        },
+        "registers": {
+            "pile": {
+                "gun_count": reg(0x1000, "u16", 1, "个"),
+                "max_power": reg(0x1001, "u16", 1, "kW"),
+            },
+            "gun1": {
+                "state": reg(0x2000, "u16", 1, ""),
+                "mode": reg(0x2001, "u16", 1, ""),
+                "voltage": reg(0x2010, "u16", 0.1, "V"),
+                "current": reg(0x2011, "u16", 0.01, "A"),
+                "power": reg(0x200E, "u32", 0.001, "kW"),
+                "soc": reg(0x2012, "u16", 1, "%"),
+                "temperature": reg(0x2013, "u16", 1, "°C"),
+            },
+            "gun2": {
+                "state": reg(0x2100, "u16", 1, ""),
+                "mode": reg(0x2101, "u16", 1, ""),
+                "voltage": reg(0x2110, "u16", 0.1, "V"),
+                "current": reg(0x2111, "u16", 0.01, "A"),
+                "power": reg(0x210E, "u32", 0.001, "kW"),
+                "soc": reg(0x2112, "u16", 1, "%"),
+                "temperature": reg(0x2113, "u16", 1, "°C"),
+            },
+        },
+        "control": {
+            "power_absolute": {"addr": 0x4000, "cmd": "write_registers"},
+        },
+    },
+}

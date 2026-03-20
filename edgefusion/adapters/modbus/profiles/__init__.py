@@ -1,6 +1,6 @@
 from typing import Any, Dict
 
-from . import charger, grid_meter, pv, storage
+from . import charger, grid_meter, pv, storage, vendors
 from .charger import CHARGER_POINT_TABLES
 from .common import copy_map, get_nested_registers, register_like
 from .grid_meter import GRID_METER_POINT_TABLES
@@ -203,6 +203,7 @@ __all__ = [
     "grid_meter",
     "pv",
     "storage",
+    "vendors",
     "get_modbus_charger_connector_control_map",
     "get_modbus_charger_connector_count",
     "get_modbus_charger_connector_mode_map",
