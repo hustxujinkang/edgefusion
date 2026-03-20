@@ -4,6 +4,12 @@ from edgefusion.adapters.device_profiles import (
     resolve_protocol_write,
 )
 from edgefusion.point_tables import POINT_TABLES, get_device_default_maps
+from edgefusion.register_map import (
+    resolve_read_definition,
+    resolve_read_register,
+    resolve_write_definition,
+    resolve_write_register,
+)
 
 
 def test_modbus_profile_module_exposes_builtin_model_tables():
@@ -39,6 +45,51 @@ def test_point_tables_compatibility_facade_reexports_modbus_profiles():
 
     assert POINT_TABLES is MODBUS_POINT_TABLES
     assert get_device_default_maps(device_info) == get_modbus_device_default_maps(device_info)
+
+
+def test_register_map_primary_api_reads_from_explicit_semantic_maps_only():
+    device_info = {
+        "telemetry_map": {"power": {"addr": 30001, "type": "i32"}},
+        "read_map": {"power": {"addr": 39991, "type": "u16"}},
+        "control_map": {"power_limit": {"addr": 41001, "type": "u16"}},
+        "write_map": {"power_limit": {"addr": 49991, "type": "u16"}},
+        "register_map": {
+            "power": {"addr": 39992, "type": "u16"},
+            "power_limit": {"addr": 49992, "type": "u16"},
+        },
+    }
+
+    assert resolve_read_definition(device_info, "power") == {"addr": 30001, "type": "i32"}
+    assert resolve_write_definition(device_info, "power_limit") == {"addr": 41001, "type": "u16"}
+
+
+def test_register_map_compatibility_wrappers_keep_legacy_fallbacks():
+    device_info = {
+        "read_map": {"power": {"addr": 39991, "type": "u16"}},
+        "write_map": {"power_limit": {"addr": 49991, "type": "u16"}},
+    }
+
+    assert resolve_read_register(device_info, "power") == {"addr": 39991, "type": "u16"}
+    assert resolve_write_register(device_info, "power_limit") == {"addr": 49991, "type": "u16"}
+
+
+def test_normalize_device_profile_promotes_legacy_register_maps_into_primary_maps():
+    device = normalize_device_profile(
+        {
+            "device_id": "legacy_storage",
+            "type": "energy_storage",
+            "protocol": "modbus",
+            "read_map": {"soc": {"addr": 32001, "type": "u16"}},
+            "write_map": {"charge_power": {"addr": 42002, "type": "u16"}},
+            "register_map": {"mode": {"addr": 42001, "type": "u16"}},
+        }
+    )
+
+    assert device["telemetry_map"]["soc"] == {"addr": 32001, "type": "u16"}
+    assert device["control_map"]["charge_power"] == {"addr": 42002, "type": "u16"}
+    assert device["control_map"]["mode"] == {"addr": 42001, "type": "u16"}
+    assert resolve_protocol_read(device, "soc") == {"addr": 32001, "type": "u16"}
+    assert resolve_protocol_write(device, "charge_power") == {"addr": 42002, "type": "u16"}
 
 
 def test_normalize_device_profile_merges_point_table_defaults():

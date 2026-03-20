@@ -3,11 +3,11 @@ from typing import Any, Dict
 from ..charger_layout import normalize_charger_pile
 from .modbus import get_modbus_device_default_maps
 from ..device_semantics import build_device_capabilities, normalize_runtime_value
-from ..register_map import resolve_read_register, resolve_write_register
+from ..register_map import normalize_mapping_aliases, resolve_read_definition, resolve_write_definition
 
 
 def normalize_device_profile(device_info: Dict[str, Any]) -> Dict[str, Any]:
-    normalized = dict(device_info)
+    normalized = normalize_mapping_aliases(device_info)
     default_maps = get_modbus_device_default_maps(normalized)
     for key, value in default_maps.items():
         if key in {"telemetry_map", "control_map"} and isinstance(value, dict):
@@ -29,11 +29,11 @@ def normalize_device_profile(device_info: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def resolve_protocol_read(device_info: Dict[str, Any], field: str) -> Any:
-    return resolve_read_register(device_info, field)
+    return resolve_read_definition(device_info, field)
 
 
 def resolve_protocol_write(device_info: Dict[str, Any], field: str) -> Any:
-    return resolve_write_register(device_info, field)
+    return resolve_write_definition(device_info, field)
 
 
 def normalize_field_value(device_info: Dict[str, Any], field: str, raw_value: Any) -> Any:
