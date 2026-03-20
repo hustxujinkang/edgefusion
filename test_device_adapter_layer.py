@@ -3,6 +3,7 @@ from edgefusion.adapters.device_profiles import (
     resolve_protocol_read,
     resolve_protocol_write,
 )
+from edgefusion.charger_layout import build_connector_views
 from edgefusion.point_tables import POINT_TABLES, get_device_default_maps
 from edgefusion.register_map import (
     normalize_mapping_aliases,
@@ -127,6 +128,43 @@ def test_modbus_defaults_can_use_unambiguous_vendor_default_model():
 
     assert defaults["telemetry_map"]["soc"]["addr"] == 52001
     assert defaults["control_map"]["mode"]["addr"] == 42001
+
+
+def test_protocol_agnostic_connector_profile_defaults_resolve_from_device_info():
+    from edgefusion.adapters.charger_profiles import (
+        get_charger_connector_count,
+        get_charger_connector_profile_defaults,
+    )
+
+    device_info = {
+        "device_id": "charger_1",
+        "type": "charging_station",
+        "protocol": "modbus",
+        "manufacturer": "许继",
+        "model": "120kw",
+    }
+
+    assert get_charger_connector_count(device_info) == 2
+    defaults = get_charger_connector_profile_defaults(device_info, 2)
+    assert defaults["telemetry_map"]["power"]["addr"] == 0x210E
+    assert defaults["status_map"][3] == "charging"
+    assert defaults["control_map"]["power_limit"]["builder"] == "xj_power_absolute"
+
+
+def test_charger_layout_builds_connector_views_through_adapter_seam():
+    views = build_connector_views(
+        {
+            "device_id": "charger_1",
+            "type": "charging_station",
+            "protocol": "modbus",
+            "manufacturer": "许继",
+            "model": "120kw",
+        }
+    )
+
+    assert [view["device_id"] for view in views] == ["charger_1:1", "charger_1:2"]
+    assert views[1]["telemetry_map"]["power"]["addr"] == 0x210E
+    assert views[1]["control_map"]["power_limit"]["connector_id"] == 2
 
 
 def test_register_map_primary_api_reads_from_explicit_semantic_maps_only():

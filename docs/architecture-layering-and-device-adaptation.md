@@ -15,6 +15,7 @@
 - 在真实设备到位后，只补厂家适配和连接层，不改业务策略
 - 同一类设备即使换协议，也尽量复用相同的业务语义
 - 同一种应用协议即使换物理承载，也尽量复用相同的协议适配逻辑
+- 当前真实设备主路径以 Modbus 为主，后续的 MQTT / CAN / HTTP 更适合作为补充协议支持，而不是反过来主导设备建模
 
 因此系统应拆成四层，而不是把设备类型、厂家点表、网络连接混在一起。
 
@@ -112,83 +113,22 @@ flowchart TD
 
 这一层不应该知道设备模型，也不应该知道厂家点表。
 
-## 3. 当前项目的实际状态
+## 3. 补充协议支持怎么做
 
-当前项目的方向是对的，但分层仍在演进中。
+先明确一个原则：
 
-### 3.1 已经比较合理的部分
+- 设备接入的第一问题是“它属于哪类设备模型”，不是“它走什么协议”
+- 协议支持是补充能力，用来承接已经存在的设备模型
+- 在当前项目里，Modbus 是主路径；MQTT / CAN / HTTP 应按补充协议支持来设计
 
-- 业务侧已经大量使用统一语义字段，而不是直接读写寄存器
-- 光、储、充、总表已经有统一设备模型雏形
-- 充电桩已经实现“桩接入、枪控制”
-- `DeviceManager` 已经承担了统一语义入口
-- 设备适配层已经补上 `status/mode` 归一和 `capabilities` 声明，策略层不再直接依赖厂家原始状态码判断可控性
+因此“补协议”和“接设备”应分开理解：
 
-### 3.2 还没有拆干净的部分
+- **接设备**：补厂家 profile、状态映射、控制命令映射
+- **补协议**：补这一类协议的适配层、传输层、物理连接层
 
-- `point_tables.py` 已退化成兼容导出入口，`adapters/modbus/profiles/` 已按设备族拆成聚合模块，并通过 `vendors/` 注册入口聚合厂家级子模块；厂家别名、型号别名和不歧义默认 profile 解析也已下沉到该边界层
-- `register_map.py` 已经收敛成“显式语义映射解析 + 旧键兼容归一”边界，旧键兼容只保留在归一化入口
-- `Modbus` 已经拆出 `modbus_factory.py + protocol/modbus.py + transport/modbus_tcp.py + transport/modbus_rtu.py`，并新增 `vendors` 注册表承接厂家 profile 扩展，但点表适配和厂家 profile 注册治理仍有继续收口空间
-- `MQTTProtocol` 仍然是骨架，没有形成完整的“适配层 + 协议层 + 连接层”
-- `DeviceManager` 已经不再自己拼 Modbus transport，协议初始化和 endpoint 分派也已下沉到 `protocol/registry.py`；设备清单、候选清单和生命周期动作也已下沉到轻量的 `device_inventory.py`，但它仍是当前的统一编排入口
+下面的模板描述的是“如何补一条协议支持”，不是“如何接某一台设备”
 
-## 4. 当前代码归位建议
-
-下表描述当前主要文件更接近哪一层，以及后续应如何调整。
-
-| 文件 | 当前角色 | 推荐归位 |
-|------|----------|----------|
-| `edgefusion/monitor/collector.py` | 采集 | 设备模型层消费方 |
-| `edgefusion/control/site_state.py` | 站级状态 | 设备模型层消费方 |
-| `edgefusion/control/export_protect.py` | 站级控制 | 设备模型层消费方 |
-| `edgefusion/strategy/mode_controller.py` | 模式控制 | 设备模型层消费方 |
-| `edgefusion/charger_layout.py` | 设备视图展开 | 设备模型层 |
-| `edgefusion/adapters/device_profiles.py` | 设备语义适配入口 | 厂家协议适配层 |
-| `edgefusion/adapters/modbus/profiles/` | Modbus 设备族聚合 profile 与厂家子模块 | 厂家协议适配层 |
-| `edgefusion/adapters/modbus/profiles/vendors/__init__.py` | 厂家 profile 注册、别名解析与设备族视图聚合入口 | 厂家协议适配层 |
-| `edgefusion/point_tables.py` | 旧点表入口兼容层 | 厂家协议适配层兼容 facade |
-| `edgefusion/register_map.py` | 显式语义映射解析与旧键兼容归一 | 厂家协议适配层 |
-| `edgefusion/device_inventory.py` | 设备清单、候选清单与生命周期动作 | 编排层内的轻量清单组件 |
-| `edgefusion/protocol/registry.py` | 协议初始化、缓存与 endpoint 分派 | 编排 / 组合根 |
-| `edgefusion/protocol/modbus_factory.py` | Modbus 协议组装与 endpoint 归一 | 编排 / 组合根 |
-| `edgefusion/protocol/modbus.py` | Modbus 实现 | 传输协议层 |
-| `edgefusion/transport/modbus_tcp.py` | Modbus TCP 连接承载 | 物理连接层 |
-| `edgefusion/transport/modbus_rtu.py` | Modbus RTU 连接承载 | 物理连接层 |
-| `edgefusion/protocol/mqtt.py` | MQTT 实现 | 传输协议层骨架 |
-| `edgefusion/device_manager.py` | 统一入口 | 编排层，聚焦设备侧流程与协议 IO 编排 |
-
-## 5. 推荐目标形态
-
-后续可以逐步收敛成下面这种结构，不要求一次性完成。
-
-```text
-edgefusion/
-├── models/                 # 设备模型层
-├── adapters/               # 厂家协议适配层
-│   ├── modbus/
-│   ├── mqtt/
-│   └── ocpp/
-├── protocol/               # 传输协议层
-│   ├── modbus.py
-│   ├── mqtt.py
-│   └── ocpp.py
-├── transport/              # 物理连接层
-│   ├── modbus_tcp.py
-│   ├── modbus_rtu.py
-│   └── mqtt_broker.py
-└── ...
-```
-
-说明：
-
-- `models/` 不依赖寄存器地址
-- `adapters/` 负责厂家差异
-- `protocol/` 负责协议收发
-- `transport/` 负责 TCP、RTU、TLS 这些连接细节
-
-## 6. 协议与连接的拆分原则
-
-### 6.1 Modbus
+### 3.1 Modbus
 
 当前项目默认真实设备世界观基本是 Modbus TCP，这条线应继续作为第一优先级完善。
 
@@ -204,59 +144,171 @@ edgefusion/
 - 同一个厂家点表同时跑在 TCP 或 RTU 上
 - 上层不用关心现场设备到底是以太网还是串口
 
-### 6.2 MQTT
+### 3.2 MQTT
 
-MQTT 不应只保留一个协议骨架，而应拆成：
+MQTT 属于**补充应用层协议支持**，不是设备模型本身。
 
-- MQTT 语义映射：字段对应哪个 topic，控制命令发什么 payload
-- MQTT 协议处理：订阅、发布、消息解析、缓存
-- Broker 连接管理：broker 地址、认证、TLS、重连
+补 MQTT 时，建议按下面三层补：
 
-只有这样，MQTT 设备才能真正和 Modbus 设备站在同一层语义抽象上。
+- 厂家协议适配层：
+  - 字段对应哪个 topic
+  - 控制命令发哪个 topic / payload
+  - topic payload 到统一语义字段的映射
+- 传输协议层：
+  - 订阅
+  - 发布
+  - 消息解析
+  - 最近值缓存
+  - QoS / retained / session 这类 MQTT 语义
+- 物理连接层：
+  - MQTT over TCP
+  - MQTT over TLS
+  - MQTT over WebSocket
+  - broker 地址、认证、重连、心跳
 
-## 7. 面向真机接入的迭代顺序
+推荐文件落点：
 
-推荐按以下顺序推进，而不是同时全面铺开。
+- `adapters/mqtt/`：topic / payload 映射
+- `protocol/mqtt.py`：MQTT publish / subscribe / cache
+- `transport/mqtt_broker.py`：broker 连接管理
 
-### 第一步：把 Modbus 分层补干净
+最小接通标准：
+
+- 能把 topic 数据映射成统一设备字段
+- 能把控制语义下发成 MQTT 消息
+- 业务层不感知 broker、topic 细节
+
+### 3.3 CAN
+
+CAN 要特别注意：**CAN 本身更接近总线/链路承载，不等于完整应用层协议。**
+
+所以补 “CAN 支持” 时，必须明确区分两层：
+
+- 应用层：
+  - 是自定义帧语义
+  - 还是 CANopen / J1939 / 厂家私有对象字典
+  - 一帧或多帧如何映射到 `soc/power/status` 这类统一字段
+  - 控制命令如何编码成帧
+- 物理层 / 连接层：
+  - CAN / CAN FD
+  - USB-CAN
+  - PCIe CAN 卡
+  - 串口转 CAN 网关
+  - 波特率、通道号、过滤器、重连
+
+在这个项目里，如果要补 CAN，建议拆成：
+
+- `adapters/can/`：帧语义映射、对象字典映射、命令编码规则
+- `protocol/can.py`：收发帧、组帧/解帧、请求响应或周期帧处理
+- `transport/can_bus.py`：具体 CAN 接口、通道、波特率、驱动生命周期
+
+最小接通标准：
+
+- 能把原始帧解析为统一字段
+- 能把统一控制语义编码成 CAN 帧
+- 明确写清应用层协议不是 “CAN” 三个字就结束
+
+### 3.4 HTTP
+
+HTTP 也是**补充应用层协议支持**。
+
+补 HTTP 时建议按下面三层补：
+
+- 厂家协议适配层：
+  - 哪个语义字段对应哪个 URL / 方法 / 请求体 / 响应体
+  - 鉴权头、设备 ID、站点 ID 的映射
+  - 厂家状态码到统一状态的转换
+- 传输协议层：
+  - GET / POST / PUT
+  - 请求超时、重试、响应解析
+  - 轮询读取和写入控制
+- 物理连接层：
+  - HTTP over TCP
+  - HTTPS / TLS
+  - 代理、证书、Keep-Alive、连接池
+
+推荐文件落点：
+
+- `adapters/http/`：字段到 REST/API 的映射
+- `protocol/http.py`：请求发送、响应解析、轮询封装
+- `transport/http_client.py`：session、TLS、连接池、认证
+
+最小接通标准：
+
+- 能把接口响应映射成统一字段
+- 能把控制语义转换成 HTTP 请求
+- 业务层不感知 URL、Header、认证细节
+
+## 4. 后续真正要做的事
+
+当前 Modbus 主链路已经基本成型，后续不再继续做大规模分层重构。
+
+后面的工作主要分两类：
+
+### 4.1 有新厂家资料时，补厂家 profile
+
+落点：
+
+- `adapters/modbus/profiles/vendors/`
+
+内容：
+
+- `telemetry_map`
+- `control_map`
+- `status_map / mode_map`
+- 厂家别名、型号别名、默认模型
+
+原则：
+
+- 只补适配层
+- 不改业务层
+- 优先先补最小必需字段，再补高级能力
+
+### 4.2 有新协议需求时，补协议支持
+
+步骤：
+
+1. 先确认设备模型不变
+2. 再补 `adapters/<protocol>/`
+3. 再补 `protocol/<protocol>.py`
+4. 最后补 `transport/<protocol transport>.py`
+
+原则：
+
+- 补协议，不改设备模型
+- 业务层仍只看到统一语义字段
+- 明确区分应用层协议和物理连接层
+
+### 4.3 继续保持手工接入主导
+
+原则：
+
+- 不扩重型自动发现体系
+- 不为了分层继续拆 `DeviceManager`
+- 当前结构够支撑后续接真机，后面以补厂家和补协议为主
+
+### 第二步：按需补充协议支持
 
 目标：
 
-- 保持当前已打通的 Modbus TCP 主链路
-- 从代码结构上把“点表适配”和“TCP 连接”再拉开一点
-- 让 TCP / RTU 进入同一条语义接入通路
-
-当前进展：
-
-- 已新增 `adapters/device_profiles.py` 作为设备适配层入口
-- 已新增 `adapters/modbus/profiles/` 承接 Modbus 厂家 profile，按设备族聚合并继续细化到厂家子模块，`vendors/__init__.py` 负责厂家注册、别名解析与设备族视图聚合，`point_tables.py` 只保留兼容导出
-- 已新增 `transport/modbus_tcp.py` 作为 Modbus TCP 物理连接承载
-- 已新增 `transport/modbus_rtu.py` 作为 Modbus RTU 物理连接承载
-- 已新增 `protocol/registry.py` 负责协议初始化、缓存与 endpoint 分派
-- 已新增 `protocol/modbus_factory.py` 负责 Modbus protocol + transport 组装和 endpoint 归一
-- 已新增 `device_inventory.py` 负责设备清单、候选清单与生命周期动作
-- `DeviceManager` 已改为优先走适配层入口，并通过 registry + factory 复用默认 endpoint / 派生专用 endpoint，同时把设备清单与生命周期动作委托给 `device_inventory.py`
-- `ModbusProtocol` 已改为依赖显式注入的 transport，而不再自己选择 TCP / RTU 实现
-
-剩余优先事项：
-
-- 继续在 `adapters/modbus/profiles/vendors/` 下补充更多厂家 profile，并通过注册入口统一纳入设备族视图
-- 新增 profile 时优先补厂家别名、型号别名和明确的默认模型，减少现场配置对内部 model key 的依赖
-- 保持现场手工接入为主，不继续扩重型自动发现体系
-- 继续把 `DeviceManager` 里剩余的设备侧编排收薄，优先保持 `device_inventory.py` 这种轻量边界，而不是拆复杂 provider 树
-
-### 第二步：补 MQTT 真正的读链路
-
-目标：
-
-- 让 MQTT 储能或其他 MQTT 设备真正进入采集闭环
+- 在 Modbus 主路径之外，按现场需要补 MQTT / CAN / HTTP
 
 最小要求：
 
-- 订阅主题
-- 最近值缓存
-- 语义字段到 topic 的映射
-- 控制 topic / payload 模板
+- 先明确设备模型不变
+- 再明确应用层协议语义怎么映射
+- 最后明确它跑在哪个物理连接层上
+
+补充协议时推荐顺序：
+
+1. 先补 `adapters/<protocol>/`
+2. 再补 `protocol/<protocol>.py`
+3. 最后补 `transport/<protocol transport>.py`
+
+判断标准：
+
+- 业务层仍只看到 `power/soc/status/power_limit`
+- 不因为补一个协议，就把设备模型改成“按协议分类”
 
 ### 第三步：继续扩展厂家 profile 和能力配置组织
 
@@ -270,7 +322,140 @@ MQTT 不应只保留一个协议骨架，而应拆成：
 - 保留 `status_map/mode_map/capabilities` 这类适配层元数据
 - 让新设备接入优先补 profile，而不是补业务层分支
 
-## 8. 对后续接入速度的意义
+## 5. 按设备类型落地步骤
+
+这一章回答的是：**现场拿到一台新设备后，具体该怎么落地。**
+
+统一原则：
+
+1. 先确定设备模型类型
+2. 再确定厂家 profile 是否已存在
+3. 再确定它跑在哪条协议栈上
+4. 最后做最小联调验证
+
+不要反过来做：
+
+- 不要先写协议代码，再猜它属于什么设备
+- 不要直接在业务层加 `if 厂家A`
+- 不要把“寄存器能读出来”当成“设备已经接通”
+
+### 8.1 总表
+
+第一步先确认它是不是 `grid_meter`：
+
+- 核心语义只有 `power` 和 `status`
+- `power` 的正负方向必须先在现场确认
+- 如果方向没确认，后面的站级判断都不可信
+
+落地顺序：
+
+1. 确认厂家 profile 是否已存在
+2. 如果没有，先补 `adapters/.../vendors/<vendor>.py`
+3. 至少补：
+   - `telemetry_map.power`
+   - `telemetry_map.status`
+   - `status_map`
+4. 如果现场配置不是内部 model key，就补厂家别名、型号别名、默认模型
+5. 再确认它走 Modbus / MQTT / CAN / HTTP 哪条协议栈
+
+最小联调检查：
+
+- 能稳定读到 `power`
+- 断开设备时 `status` 或缺测能反映异常
+- 取电 / 反送方向和现场仪表一致
+- 采集层读不到 `power` 时不会被伪装成正常 0 值
+
+### 8.2 光伏
+
+第一步先确认它是不是 `pv`：
+
+- 最核心的是 `power`
+- 次核心是 `status`
+- 有闭环控制需求时，再补 `power_limit`
+
+落地顺序：
+
+1. 先补光伏的 `telemetry_map`
+2. 再补 `status_map`
+3. 如果需要参与控制，再补 `control_map.power_limit`
+4. 如果厂家还提供 `available_power`、`min_power_limit`，可以补进 profile，但不要先让业务层强依赖
+5. 最后确认协议栈和物理连接参数
+
+最小联调检查：
+
+- 能读到实时 `power`
+- 状态能归一成统一语义
+- 下发 `power_limit` 后，设备侧行为与预期一致
+- 限功失败不会被误判成“设备支持控制”
+
+### 8.3 储能
+
+第一步先确认它是不是 `energy_storage`：
+
+- 最关键字段是 `soc`、`power`、`mode`
+- 控制侧至少要看 `charge_power / discharge_power / mode`
+
+落地顺序：
+
+1. 先补 `telemetry_map.soc`
+2. 再补 `telemetry_map.power`、`telemetry_map.mode`
+3. 再补 `mode_map`
+4. 如果要参与控制，再补：
+   - `control_map.mode`
+   - `control_map.charge_power`
+   - `control_map.discharge_power`
+5. 如果有最大充放电能力，再补：
+   - `max_charge_power`
+   - `max_discharge_power`
+
+最小联调检查：
+
+- `soc` 数值和现场界面一致
+- `power` 的充放电方向已确认
+- `mode` 能归一成统一语义
+- 控制命令下发后，设备实际功率响应符合预期
+
+### 8.4 充电桩
+
+第一步先确认它是不是 `charging_station`，然后再确认控制对象是不是 `charging_connector`。
+
+在当前项目里，充电桩落地必须按这个思路：
+
+- 资产管理和接入按桩
+- 采集和控制按枪
+
+落地顺序：
+
+1. 先补桩级 profile
+2. 确认 connector 数量、枪号规则、共享功率约束
+3. 再补 connector 级 telemetry / control 映射
+4. 再补 `connector_status_map` / `connector_mode_map`
+5. 如果厂家命令是复杂报文，再把 builder 和固定命令值落到 profile 里，而不是写到面板逻辑里
+
+最小联调检查：
+
+- connector 视图展开正确
+- 枪状态能归一成 `idle / charging / fault`
+- `power_limit` 或 `start/stop` 命令能通过统一语义链路下发
+- 双枪共享功率时，不会因为按枪调度而越过整桩约束
+
+### 8.5 拿到厂家资料后的最小动作
+
+无论是哪类设备，拿到厂家资料后，建议先做这几步：
+
+1. 先圈出最小必需字段，不要一上来全量录点
+2. 先补可读字段，再补可写字段
+3. 先补状态归一，再补高级能力
+4. 先用最小 profile 跑通，再补别名和默认模型
+
+最小必需字段建议：
+
+- 总表：`power`, `status`
+- 光伏：`power`, `status`, 可选 `power_limit`
+- 储能：`soc`, `power`, `mode`
+- 充电枪：`status`, `power`, 可选 `power_limit`
+
+## 6. 对后续接入速度的意义
 
 如果按本文档迭代，后续接真机会更快，原因不是“协议更多了”，而是“每次接入改动范围更小了”。
 
@@ -282,7 +467,7 @@ MQTT 不应只保留一个协议骨架，而应拆成：
 
 如果这三层清楚，后面接入新设备时就不需要反复改策略层、采集层和面板层。
 
-## 9. 当前结论
+## 7. 当前结论
 
 当前项目已经完成了最重要的一步：
 

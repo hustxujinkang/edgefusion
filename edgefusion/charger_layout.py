@@ -1,11 +1,8 @@
 from typing import Any, Dict, List
 from .device_semantics import build_device_capabilities
-from .adapters.modbus import (
-    get_charger_connector_control_map,
+from .adapters.charger_profiles import (
     get_charger_connector_count,
-    get_charger_connector_mode_map,
-    get_charger_connector_status_map,
-    get_charger_connector_telemetry_map,
+    get_charger_connector_profile_defaults,
 )
 
 
@@ -24,7 +21,7 @@ def is_charger_pile(device_info: Dict[str, Any] | None) -> bool:
 
 
 def _normalize_connector_count(device_info: Dict[str, Any]) -> int:
-    model_count = get_charger_connector_count(device_info.get("model"))
+    model_count = get_charger_connector_count(device_info)
     raw = device_info.get("connector_count", device_info.get("gun_count", model_count or 1))
     try:
         return max(1, int(raw))
@@ -53,10 +50,11 @@ def build_connector_views(device_info: Dict[str, Any]) -> List[Dict[str, Any]]:
     for fallback_index, connector in enumerate(connector_defs, start=1):
         connector_id = int(connector.get("connector_id", fallback_index))
         connector_device_id = connector.get("device_id", build_connector_device_id(pile_id, connector_id))
-        default_telemetry_map = get_charger_connector_telemetry_map(device_info.get("model"), connector_id)
-        default_control_map = get_charger_connector_control_map(device_info.get("model"), connector_id)
-        default_status_map = get_charger_connector_status_map(device_info.get("model"))
-        default_mode_map = get_charger_connector_mode_map(device_info.get("model"))
+        connector_defaults = get_charger_connector_profile_defaults(device_info, connector_id)
+        default_telemetry_map = connector_defaults.get("telemetry_map")
+        default_control_map = connector_defaults.get("control_map")
+        default_status_map = connector_defaults.get("status_map")
+        default_mode_map = connector_defaults.get("mode_map")
         explicit_capabilities = connector.get("capabilities")
         connector_view = dict(device_info)
         connector_view.pop("capabilities", None)
