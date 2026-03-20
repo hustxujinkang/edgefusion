@@ -5,6 +5,7 @@ from edgefusion.adapters.device_profiles import (
 )
 from edgefusion.point_tables import POINT_TABLES, get_device_default_maps
 from edgefusion.register_map import (
+    normalize_mapping_aliases,
     resolve_read_definition,
     resolve_read_register,
     resolve_write_definition,
@@ -33,11 +34,12 @@ def test_modbus_profile_module_exposes_builtin_model_tables():
 
 def test_modbus_profile_package_exposes_device_family_submodules():
     from edgefusion.adapters.modbus.profiles import charger, grid_meter, pv, storage
+    from edgefusion.adapters.modbus.profiles.vendors import get_vendor_point_tables_for_device_type
 
-    assert "generic_grid_meter" in grid_meter.GRID_METER_POINT_TABLES
-    assert "generic_pv" in pv.PV_POINT_TABLES
-    assert "generic_storage" in storage.STORAGE_POINT_TABLES
-    assert "xj_dc_120kw" in charger.CHARGER_POINT_TABLES
+    assert grid_meter.GRID_METER_POINT_TABLES == get_vendor_point_tables_for_device_type("grid_meter")
+    assert pv.PV_POINT_TABLES == get_vendor_point_tables_for_device_type("pv")
+    assert storage.STORAGE_POINT_TABLES == get_vendor_point_tables_for_device_type("energy_storage")
+    assert charger.CHARGER_POINT_TABLES == get_vendor_point_tables_for_device_type("charging_station")
 
 
 def test_modbus_profile_package_exposes_vendor_submodules():
@@ -46,6 +48,23 @@ def test_modbus_profile_package_exposes_vendor_submodules():
     assert "generic_grid_meter" in generic.GENERIC_POINT_TABLES
     assert "generic_charger" in generic.GENERIC_POINT_TABLES
     assert "xj_dc_120kw" in xj.XJ_POINT_TABLES
+
+
+def test_vendor_registry_exposes_vendor_tables_and_device_family_views():
+    from edgefusion.adapters.modbus.profiles.vendors import (
+        VENDOR_POINT_TABLES,
+        get_vendor_point_tables,
+        get_vendor_point_tables_for_device_type,
+    )
+
+    assert "generic" in VENDOR_POINT_TABLES
+    assert "xj" in VENDOR_POINT_TABLES
+    assert get_vendor_point_tables("generic") is VENDOR_POINT_TABLES["generic"]
+    assert "generic_grid_meter" in get_vendor_point_tables_for_device_type("grid_meter")
+    assert "generic_pv" in get_vendor_point_tables_for_device_type("pv")
+    assert "generic_storage" in get_vendor_point_tables_for_device_type("energy_storage")
+    assert "generic_charger" in get_vendor_point_tables_for_device_type("charging_station")
+    assert "xj_dc_120kw" in get_vendor_point_tables_for_device_type("charging_station")
 
 
 def test_point_tables_compatibility_facade_reexports_modbus_profiles():
@@ -80,14 +99,31 @@ def test_register_map_primary_api_reads_from_explicit_semantic_maps_only():
     assert resolve_write_definition(device_info, "power_limit") == {"addr": 41001, "type": "u16"}
 
 
-def test_register_map_compatibility_wrappers_keep_legacy_fallbacks():
+def test_register_map_resolution_no_longer_reads_legacy_keys_directly():
     device_info = {
         "read_map": {"power": {"addr": 39991, "type": "u16"}},
         "write_map": {"power_limit": {"addr": 49991, "type": "u16"}},
     }
 
-    assert resolve_read_register(device_info, "power") == {"addr": 39991, "type": "u16"}
-    assert resolve_write_register(device_info, "power_limit") == {"addr": 49991, "type": "u16"}
+    assert resolve_read_register(device_info, "power") == "power"
+    assert resolve_write_register(device_info, "power_limit") == "power_limit"
+
+
+def test_normalize_mapping_aliases_absorbs_and_removes_legacy_keys():
+    normalized = normalize_mapping_aliases(
+        {
+            "read_map": {"power": {"addr": 39991, "type": "u16"}},
+            "write_map": {"power_limit": {"addr": 49991, "type": "u16"}},
+            "register_map": {"mode": {"addr": 42001, "type": "u16"}},
+        }
+    )
+
+    assert normalized["telemetry_map"]["power"] == {"addr": 39991, "type": "u16"}
+    assert normalized["control_map"]["power_limit"] == {"addr": 49991, "type": "u16"}
+    assert normalized["control_map"]["mode"] == {"addr": 42001, "type": "u16"}
+    assert "read_map" not in normalized
+    assert "write_map" not in normalized
+    assert "register_map" not in normalized
 
 
 def test_normalize_device_profile_promotes_legacy_register_maps_into_primary_maps():
@@ -105,6 +141,9 @@ def test_normalize_device_profile_promotes_legacy_register_maps_into_primary_map
     assert device["telemetry_map"]["soc"] == {"addr": 32001, "type": "u16"}
     assert device["control_map"]["charge_power"] == {"addr": 42002, "type": "u16"}
     assert device["control_map"]["mode"] == {"addr": 42001, "type": "u16"}
+    assert "read_map" not in device
+    assert "write_map" not in device
+    assert "register_map" not in device
     assert resolve_protocol_read(device, "soc") == {"addr": 32001, "type": "u16"}
     assert resolve_protocol_write(device, "charge_power") == {"addr": 42002, "type": "u16"}
 

@@ -126,9 +126,9 @@ flowchart TD
 
 ### 3.2 还没有拆干净的部分
 
-- `point_tables.py` 已退化成兼容导出入口，`adapters/modbus/profiles/` 已按设备族拆成聚合模块，并引入厂家级子模块组织，但后续仍可以继续补更多厂家 profile
-- `register_map.py` 已经收敛成“显式语义映射解析 + 旧键兼容归一”边界，但仍保留 `read_map/write_map/register_map` 的兼容入口
-- `Modbus` 已经拆出 `modbus_factory.py + protocol/modbus.py + transport/modbus_tcp.py + transport/modbus_rtu.py`，但点表适配和厂家 profile 组织仍有继续收口空间
+- `point_tables.py` 已退化成兼容导出入口，`adapters/modbus/profiles/` 已按设备族拆成聚合模块，并通过 `vendors/` 注册入口聚合厂家级子模块，后续仍可以继续补更多厂家 profile
+- `register_map.py` 已经收敛成“显式语义映射解析 + 旧键兼容归一”边界，旧键兼容只保留在归一化入口
+- `Modbus` 已经拆出 `modbus_factory.py + protocol/modbus.py + transport/modbus_tcp.py + transport/modbus_rtu.py`，并新增 `vendors` 注册表承接厂家 profile 扩展，但点表适配和厂家 profile 注册治理仍有继续收口空间
 - `MQTTProtocol` 仍然是骨架，没有形成完整的“适配层 + 协议层 + 连接层”
 - `DeviceManager` 已经不再自己拼 Modbus transport，协议初始化和 endpoint 分派也已下沉到 `protocol/registry.py`，但它仍是当前的统一编排入口，后续可以继续向更独立的 provider / registry 收口
 
@@ -145,6 +145,7 @@ flowchart TD
 | `edgefusion/charger_layout.py` | 设备视图展开 | 设备模型层 |
 | `edgefusion/adapters/device_profiles.py` | 设备语义适配入口 | 厂家协议适配层 |
 | `edgefusion/adapters/modbus/profiles/` | Modbus 设备族聚合 profile 与厂家子模块 | 厂家协议适配层 |
+| `edgefusion/adapters/modbus/profiles/vendors/__init__.py` | 厂家 profile 注册与设备族视图聚合入口 | 厂家协议适配层 |
 | `edgefusion/point_tables.py` | 旧点表入口兼容层 | 厂家协议适配层兼容 facade |
 | `edgefusion/register_map.py` | 显式语义映射解析与旧键兼容归一 | 厂家协议适配层 |
 | `edgefusion/protocol/registry.py` | 协议初始化、缓存与 endpoint 分派 | 编排 / 组合根 |
@@ -227,7 +228,7 @@ MQTT 不应只保留一个协议骨架，而应拆成：
 当前进展：
 
 - 已新增 `adapters/device_profiles.py` 作为设备适配层入口
-- 已新增 `adapters/modbus/profiles/` 承接 Modbus 厂家 profile，按设备族聚合并继续细化到厂家子模块，`point_tables.py` 只保留兼容导出
+- 已新增 `adapters/modbus/profiles/` 承接 Modbus 厂家 profile，按设备族聚合并继续细化到厂家子模块，`vendors/__init__.py` 负责厂家注册与设备族视图聚合，`point_tables.py` 只保留兼容导出
 - 已新增 `transport/modbus_tcp.py` 作为 Modbus TCP 物理连接承载
 - 已新增 `transport/modbus_rtu.py` 作为 Modbus RTU 物理连接承载
 - 已新增 `protocol/registry.py` 负责协议初始化、缓存与 endpoint 分派
@@ -237,8 +238,7 @@ MQTT 不应只保留一个协议骨架，而应拆成：
 
 剩余优先事项：
 
-- 继续把 `register_map` 里的兼容入口限制在归一化边界，不再向新代码扩散
-- 继续在 `adapters/modbus/profiles/vendors/` 下补充更多厂家 profile
+- 继续在 `adapters/modbus/profiles/vendors/` 下补充更多厂家 profile，并通过注册入口统一纳入设备族视图
 - 继续把 `DeviceManager` 里的协议发现刷新和生命周期编排抽到更清晰的 provider / service 边界
 
 ### 第二步：补 MQTT 真正的读链路
@@ -254,15 +254,15 @@ MQTT 不应只保留一个协议骨架，而应拆成：
 - 语义字段到 topic 的映射
 - 控制 topic / payload 模板
 
-### 第三步：继续拆厂家 profile 和能力配置组织
+### 第三步：继续扩展厂家 profile 和能力配置组织
 
 目标：
 
-- 让 `point_tables/register_map` 的兼容职责继续收缩到边界层
+- 让 `point_tables/register_map` 的兼容职责维持在边界层，不再回流到主链路
 
 重点：
 
-- 把新增厂家映射优先落到 `adapters/modbus/profiles/vendors/` 这类厂家 profile 模块
+- 把新增厂家映射优先落到 `adapters/modbus/profiles/vendors/` 这类厂家 profile 模块，并通过注册入口暴露给设备族聚合层
 - 保留 `status_map/mode_map/capabilities` 这类适配层元数据
 - 让新设备接入优先补 profile，而不是补业务层分支
 

@@ -1,12 +1,4 @@
-from .vendors.generic import GENERIC_POINT_TABLES
-from .vendors.xj import XJ_POINT_TABLES
+from .vendors import get_vendor_point_tables_for_device_type
 
 
-CHARGER_POINT_TABLES = {
-    key: value
-    for key, value in {
-        **GENERIC_POINT_TABLES,
-        **XJ_POINT_TABLES,
-    }.items()
-    if value.get("device_type") == "charging_station"
-}
+CHARGER_POINT_TABLES = get_vendor_point_tables_for_device_type("charging_station")
