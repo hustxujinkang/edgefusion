@@ -1,335 +1,370 @@
 # Modbus 真机接入最快路径
 
-本文档面向“工控机后台开发阶段 + 厂家刚给出 Modbus 协议资料”的场景，目标不是一次性沉淀完整厂家 profile，而是先用最短路径把真实设备接通。
+这份文档只讲当前仓库里的真实流程。
 
-## 1. 先做判断，不要直接抄全表
+目标不是“把寄存器先塞进测试里”，而是：
 
-拿到厂家文档后，先只回答 4 个问题：
+1. 先离线测通真实设备
+2. 把新型号做成后端支持
+3. 部署后让它自动出现在接入页下拉框
+4. 再通过运行态 UI 正式接入
 
-1. 这台设备属于哪类统一模型
-2. 现场到底走 `Modbus TCP` 还是 `Modbus RTU`
-3. 先联调最少哪些字段
-4. 这批设备后面是否会重复接入
+---
 
-当前项目统一模型只建议先落到下面几类：
+## 1. 先分清你是哪条路径
+
+拿到厂家文档后，先判断设备属于哪一类：
 
 - `grid_meter`
 - `pv`
 - `energy_storage`
 - `charging_station`
-- `charging_connector`
 
-如果连模型都还没定清，不要先写点表。
+然后再判断型号是不是**已经在系统支持目录里**。
 
-## 2. 先圈最小字段
+### 1.1 已支持型号
 
-先只摘最小字段，不要一上来录完整寄存器表。
+如果这个型号已经在后端 profile 里存在，那么你**不用改代码**。
 
-### 2.1 总表
+你要做的是：
 
-最小字段：
+1. 用 `modbus_probe.py` 离线测通
+2. 启动运行态
+3. 在“设备接入”页选择：
+   - 设备类型
+   - 设备厂商
+   - 设备型号
+   - 接入方式（TCP / RTU）
+4. 测试连接并加入候选设备
 
-- `power`
-- `status`
+### 1.2 新厂家 / 新型号
 
-### 2.2 光伏
+如果目录里没有这个型号，那么你要先改代码，让它变成“已支持型号”。
 
-最小字段：
+正常要改的文件是：
 
-- `power`
-- `status`
-- 可选 `power_limit`
+- `edgefusion/adapters/modbus/profiles/vendors/<vendor>.py`
+- `edgefusion/adapters/modbus/profiles/vendors/__init__.py`
+- `test_device_register_mapping.py`
 
-### 2.3 储能
+只有在下面这些特殊情况，才继续扩展别的文件：
 
-最小字段：
+- 充电桩 connector 组织方式和现有模型不兼容：
+  - `edgefusion/adapters/charger_profiles.py`
+- 协议层需要新的读写能力：
+  - `edgefusion/protocol/modbus.py`
 
-- `soc`
-- `power`
-- `mode`
-- 可选 `status`
+---
 
-最小控制字段：
+## 2. 第一步永远先做：离线测通真实设备
 
-- `mode`
-- `charge_power`
-- `discharge_power`
+### 2.1 为什么不能直接拿 dashboard 当 bring-up 工具
 
-### 2.4 充电桩
+`python -m edgefusion.main` 会启动整套运行时，包括：
 
-按当前项目约定：
+- `Database`
+- `DataCollector`
+- 策略循环
+- dashboard
 
-- 资产接入按 `charging_station`
-- 采集和控制按 `charging_connector`
+所以第一轮真机联调不要直接起整套 runtime。
 
-单枪最小字段：
+先离线测通，避免把“寄存器没通”和“运行态接入逻辑”混在一起。
 
-- `status`
-- `power`
-- 可选 `power_limit`
+### 2.2 统一使用 `modbus_probe.py`
 
-常见控制字段：
+当前仓库已经有独立探测脚本：
 
-- `power_limit`
-- `start_charging`
-- `stop_charging`
-- `clear_fault`
-- `emergency_stop`
+- `modbus_probe.py`
 
-## 3. 默认先走显式映射
+它只做单机寄存器探测，不启动 `edgefusion.main`。
 
-当你第一次接某个厂家设备时，默认先不要补 profile，直接写：
+先确认虚拟环境：
+
+```powershell
+.\.venv\Scripts\python.exe --version
+```
+
+### 2.3 如果是已支持型号，优先用“按型号自动探测”
+
+现在 `modbus_probe.py` 支持直接带上：
+
+- `--device-type`
+- `--vendor`
+- `--model`
+
+如果不传 `--register`，它会自动使用和 dashboard 一样的默认探测寄存器。
+
+储能 TCP 示例：
+
+```powershell
+.\.venv\Scripts\python.exe .\modbus_probe.py `
+  --host 192.168.1.10 `
+  --unit-id 1 `
+  --device-type energy_storage `
+  --vendor generic `
+  --model generic_storage
+```
+
+充电桩 RTU 示例：
+
+```powershell
+.\.venv\Scripts\python.exe .\modbus_probe.py `
+  --transport rtu `
+  --serial-port COM3 `
+  --baudrate 9600 `
+  --bytesize 8 `
+  --parity N `
+  --stopbits 1 `
+  --unit-id 1 `
+  --device-type charging_station `
+  --vendor xj `
+  --model xj_dc_120kw
+```
+
+### 2.4 如果是新厂家 / 新型号，先用原始寄存器探测
+
+这时候还没有 profile，所以先显式指定寄存器。
+
+TCP 读寄存器：
+
+```powershell
+.\.venv\Scripts\python.exe .\modbus_probe.py `
+  --host 192.168.1.10 `
+  --port 502 `
+  --unit-id 1 `
+  --register 32001 `
+  --type u16
+```
+
+RTU 读寄存器：
+
+```powershell
+.\.venv\Scripts\python.exe .\modbus_probe.py `
+  --transport rtu `
+  --serial-port COM3 `
+  --baudrate 9600 `
+  --bytesize 8 `
+  --parity N `
+  --stopbits 1 `
+  --unit-id 1 `
+  --register 32001 `
+  --type u16
+```
+
+简单单寄存器写：
+
+```powershell
+.\.venv\Scripts\python.exe .\modbus_probe.py `
+  --host 192.168.1.10 `
+  --unit-id 1 `
+  --register 42001 `
+  --type u16 `
+  --write 3000
+```
+
+### 2.5 离线探测通过标准
+
+至少满足这些：
+
+- 退出码为 `0`
+- 输出 JSON 里 `success = true`
+- 至少读通 2 到 3 个最关键寄存器
+- 如果支持写，再写通 1 个安全寄存器
+
+建议最少验证字段：
+
+- `grid_meter`: `power`, `status`
+- `pv`: `power`, `status`
+- `energy_storage`: `soc`, `power`, `mode`
+- `charging_station`: 某个枪口的 `status`, `power`
+
+如果这一步没通，不要继续做 profile。
+
+---
+
+## 3. 路径 A：已支持型号，怎么正式接入
+
+这条路径不改代码。
+
+### 3.1 启动运行态
+
+```powershell
+.\.venv\Scripts\python.exe -m edgefusion.main
+```
+
+### 3.2 在接入页完成接入
+
+现在接入页已经改成动态型号目录。
+
+你要在页面里选择：
+
+- 设备类型
+- 设备厂商
+- 设备型号
+- 接入方式（Modbus TCP / Modbus RTU）
+
+然后填写对应端点参数：
+
+- TCP：
+  - `host`
+  - `port`
+  - `unit_id`
+- RTU：
+  - `serial_port`
+  - `baudrate`
+  - `bytesize`
+  - `parity`
+  - `stopbits`
+  - `unit_id`
+
+接入步骤：
+
+1. 点“测试连接”
+2. 成功后点“加入候选设备”
+3. 在“候选设备”表格里点“接入”
+
+### 3.3 判断是否成功
+
+成功标准：
+
+- 候选设备里出现该设备
+- 当前设备列表里出现该设备
+- 设备的 `capabilities` 符合该型号语义字段
+
+---
+
+## 4. 路径 B：新厂家 / 新型号，怎么做成系统支持
+
+这条路径才需要改代码。
+
+### 4.1 先从厂家文档摘最小字段
+
+不要先抄完整寄存器表，只摘最小正式字段。
+
+建议最低集：
+
+- `grid_meter`: `power`, `status`
+- `pv`: `power`, `status`, 可选 `power_limit`
+- `energy_storage`: `soc`, `power`, `mode`, 可选 `status`
+- `charging_station`: `status`, `power`, 可选 `power_limit`
+
+### 4.2 新增 vendor profile 文件
+
+新增或修改：
+
+- `edgefusion/adapters/modbus/profiles/vendors/<vendor>.py`
+
+最小目标是让它返回一个能被系统识别的 point table。
+
+你至少要写出：
+
+- `device_type`
+- `name`
+- `manufacturer`
+- `telemetry`
+- `control`（如果设备支持控制）
+- `status_map` / `mode_map`（如果厂家枚举值不等于系统标准值）
+
+### 4.3 把 vendor 注册进目录
+
+修改：
+
+- `edgefusion/adapters/modbus/profiles/vendors/__init__.py`
+
+至少做两件事：
+
+1. import 新 vendor 模块
+2. 把它加入 `VENDOR_PROFILES`
+
+如果这一步没做，前端下拉框不会出现新厂商 / 新型号。
+
+### 4.4 补映射测试
+
+修改：
+
+- `test_device_register_mapping.py`
+
+这里的目标不是“模拟 UI”，而是确认 profile 产出的：
 
 - `telemetry_map`
 - `control_map`
-- 可选 `status_map`
-- 可选 `mode_map`
-
-原因很简单：
-
-- 这是当前项目唯一正式运行时主接口
-- 联调速度最快
-- 不需要先决定 profile 结构怎么沉淀
-
-只有在满足下面任一条件时，再把这套映射沉淀成 `model/profile`：
-
-- 同型号后面还会继续接
-- 已经联调通过
-- 映射结构相对稳定
-
-## 4. 当前仓库里，具体改哪个文件
-
-先说当前真实情况：
-
-- 当前仓库**还没有**稳定的“持久化设备清单配置文件”
-- 所以你如果要把一个新厂商设备真正接进当前后台，**多数情况下还是要改代码**
-- 真正的差别只在于：你是先做**临时联调代码**，还是直接做**可复用 profile 代码**
-
-建议按下面三档理解。
-
-### 4.1 只想先测通 Modbus 连通性，不做语义接入
-
-这时先不要碰 profile。
-
-看和用这些位置：
-
-- `edgefusion/monitor/dashboard.py`
-
-当前已有的能力：
-
-- `/api/devices/add-modbus`
-- `/api/devices/<device_id>/read-register`
-- `/api/devices/<device_id>/write-register`
-
-这条线适合做：
-
-- IP/端口/从站号是否能连通
-- 原始寄存器能不能读到
-- 原始寄存器能不能写进去
-
-这一步的目标只是确认“设备通不通”，不是确认“语义字段已经接入”。
-
-### 4.2 想最快把语义字段接进当前后台
-
-这是当前项目里最现实的第一落点。
-
-直接参考这些文件：
-
-- `test_device_register_mapping.py`
-- `test_device_adapter_layer.py`
-- `docs/examples/modbus-explicit-mapping-templates.yaml`
-
-当前最快做法是：
-
-1. 先在 `docs/examples/modbus-explicit-mapping-templates.yaml` 按厂家文档填一份最小 `device_info`
-2. 再把同样结构的 `device_info` 临时放进你自己的联调脚本或测试里
-3. 调用 `DeviceManager.register_device(...)` 或 `register_device_candidate(...)`
-4. 用 `read_device_data(...)` / `write_device_data(...)` 走统一语义链路
-
-在当前仓库里，最直接可照抄的示例就是：
-
-- `test_device_register_mapping.py`
-
-这里已经有：
-
-- `grid_meter`
-- `pv`
-- `energy_storage`
-- `charging_station`
-
-的显式 `telemetry_map` / `control_map` 写法。
-
-如果你现在要接第一家真机，建议先按这个方式改：
-
-- 新建一个本地联调脚本，或者
-- 临时在现有测试/验证脚本里加一个真实 `device_info`
-
-**不要**第一步就去改 profile。
-
-### 4.3 想把这个厂家做成后续可复用支持
-
-等显式映射已经联调通过，再走这条线。
-
-优先改这些文件：
-
-- `edgefusion/adapters/modbus/profiles/vendors/<vendor>.py`
-- `edgefusion/adapters/modbus/profiles/__init__.py`
-- 如是充电桩，还要关注 `edgefusion/adapters/charger_profiles.py`
-- 必要时补 `test_device_adapter_layer.py`
-- 必要时补 `test_device_register_mapping.py`
-
-这里的职责是：
-
-- 给厂家型号补默认 `telemetry_map`
-- 给厂家型号补默认 `control_map`
-- 补 `status_map` / `mode_map`
-- 如果是充电桩，补 connector 级默认映射
-
-这一步完成后，后面同型号设备就不必再手写整份显式映射。
-
-## 5. 接入步骤
-
-### Step 1: 建一份最小设备配置
-
-只填：
-
-- `device_id`
-- `type`
-- `protocol`
-- 连接参数
-- 最小 `telemetry_map`
-- 最小 `control_map`
-
-不要先录厂家私有扩展字段。
-
-如果按当前仓库实际落地：
-
-- 临时联调：先在测试/脚本里构造 `device_info`
-- 可复用接入：联调通过后再转成 `adapters/modbus/profiles/vendors/` 里的 profile
-
-### Step 2: 先读，不要先控
-
-先验证最小读链路：
-
-- 能否稳定读到数据
-- 地址、类型、倍率是否正确
-- 正负方向是否正确
-- 枚举值是否需要 `status_map` / `mode_map`
-
-优先读下面这些字段：
-
-- 总表：`power`
-- 光伏：`power`
-- 储能：`soc`, `power`, `mode`
-- 充电枪：`status`, `power`
-
-### Step 3: 再补控制
-
-读通以后，再补最小控制字段：
-
-- 光伏：`power_limit`
-- 储能：`mode`, `charge_power`, `discharge_power`
-- 充电枪：`power_limit` 或 `start_charging` / `stop_charging`
-
-如果控制失败，先确认：
-
-- 这是写单寄存器、写多寄存器，还是固定报文
-- 厂家是否要求前置使能位
-- 写值单位是否和采集单位一致
-- 是否需要单独回读确认
-
-### Step 4: 再补状态归一
-
-如果厂家状态值不是统一语义，就补：
-
 - `status_map`
 - `mode_map`
 
-目标是让业务层只看到：
+都能让设备语义层正常工作。
 
-- `online / offline`
-- `idle / charging / fault`
-- `charge / discharge / idle / auto`
+第一次新增型号，至少补一个最小测试：
 
-### Step 5: 最后再补厂家扩展字段
+- 构造 `device_info`
+- 指定 `type`
+- 指定 `vendor`
+- 指定 `model`
+- 验证关键字段读写
 
-例如：
+### 4.5 什么时候才允许改协议层
 
-- `vendor_alarm_word`
-- `vendor_dispatch_code`
-- `meter_reading`
-- `alarm`
-- `fault`
-
-这些字段可以放进 `telemetry_map` / `control_map`，但不要让策略层默认依赖。
-
-## 6. 什么时候要改协议层
-
-大多数设备接入不需要改协议层。
-
-只有下面这些情况才继续改 `ModbusProtocol`：
-
-- 一个语义命令要写多个寄存器
-- 一个命令不是普通单值写
-- 读取时要特殊拼 32 位或更复杂结构
-- 字节序、符号位、倍率有特殊处理
-
-也就是说：
-
-- “地址 + 类型 + 倍率” 这类情况，先在 map 里解决
-- “复杂命令报文” 才进协议层
-
-如果真要改，优先看：
+只有遇到下面情况，才去改：
 
 - `edgefusion/protocol/modbus.py`
 
-当前复杂命令的现成例子也是在这里展开的。
+典型触发条件：
 
-## 7. 联调完成标准
+- 厂家不是 holding register
+- 需要 coil / discrete input / input register
+- 需要特殊功能码
+- 需要复杂多寄存器拼包 / 解包
 
-### 6.1 储能
+如果只是普通 holding register + 单寄存器 / 多寄存器写，不要先动协议层。
 
-至少满足：
+---
 
-- `soc` 数值可信
-- `power` 正负方向确认
-- `mode` 能归一
-- 最少一个控制字段能正确下发
+## 5. 新厂家接入后怎么验证它真的进入了型号目录
 
-### 6.2 充电桩
+代码改完后，先跑测试：
 
-至少满足：
+```powershell
+.\.venv\Scripts\python.exe -m pytest `
+  test_device_register_mapping.py `
+  test_dashboard_device_view.py `
+  test_protocol_registry.py -q
+```
 
-- connector 视图展开正确
-- `status` 能归一成统一语义
-- `power` 可读
-- 最少一个控制字段能正确下发
+通过后再启动运行态：
 
-## 8. 从显式映射升级到 profile
+```powershell
+.\.venv\Scripts\python.exe -m edgefusion.main
+```
 
-当显式映射已经验证通过，再做这一步：
+然后验证：
 
-1. 把设备配置里的 `telemetry_map/control_map` 提炼成 profile
-2. 给这个厂家/型号补 `model`
-3. 用 `model` 回填设备配置
-4. 保留显式覆盖能力，只用于少数现场差异
+1. 接入页的“设备类型 / 设备厂商 / 设备型号”下拉里出现新型号
+2. 选择它以后，测试连接成功
+3. 能加入候选设备
+4. 能接入当前设备列表
 
-不要反过来做：
+如果下拉框里没有：
 
-- 不要先设计一套很大的 profile，再去猜现场寄存器
-- 不要在业务层加 `if 厂家A`
-- 不要把临时联调寄存器写死在策略层
+- 先查 `vendors/__init__.py` 有没有注册
+- 再查 profile 的 `device_type` 是否写对
 
-## 9. 推荐使用方式
+---
 
-建议以后拿到厂家 Modbus Excel/PDF 后，固定按下面顺序推进：
+## 6. 一个最实用的决策原则
 
-1. 判断模型类型
-2. 摘最小字段
-3. 写显式映射
-4. 先读通
-5. 再控通
-6. 再补状态归一
-7. 最后沉淀成 profile
+以后实习生接设备时，先问这句话：
 
-这条路径是当前项目里接真机最快、风险也最低的方式。
+> 这个型号是不是已经在系统支持目录里？
+
+如果答案是“是”：
+
+- 不改代码
+- 只做离线探测 + UI 接入
+
+如果答案是“否”：
+
+- 先离线探测
+- 再补 vendor profile 和测试
+- 最后让它自动出现在 UI 下拉框里
+
+这就是当前仓库的真实最快路径。

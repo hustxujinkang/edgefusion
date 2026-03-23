@@ -68,6 +68,19 @@ class FakeModbusProtocol:
         return True
 
 
+class FakeProbeProtocol(FakeModbusProtocol):
+    instances = []
+
+    def __init__(self, config):
+        super().__init__(config)
+        self.read_calls = []
+        FakeProbeProtocol.instances.append(self)
+
+    def read_data(self, device_id, register):
+        self.read_calls.append((device_id, register))
+        return 61
+
+
 class RecordingDeviceManager(DeviceManager):
     def __init__(self):
         super().__init__({"modbus": {"host": "127.0.0.1", "port": 1502}})
@@ -144,6 +157,47 @@ def test_dashboard_root_uses_mode_console_tabs():
     assert "下次采集" in html
 
 
+def test_dashboard_root_uses_dynamic_device_catalog_selectors():
+    dashboard = build_dashboard(DeviceManager({}))
+    client = dashboard.app.test_client()
+
+    response = client.get("/")
+
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    assert "设备厂商" in html
+    assert "接入方式" in html
+    assert "加载设备目录中" in html
+    assert "许继 120kW 直流桩" not in html
+    assert "通用充电桩" not in html
+
+
+def test_device_models_endpoint_returns_supported_types_vendors_and_models():
+    dashboard = build_dashboard(DeviceManager({}))
+    client = dashboard.app.test_client()
+
+    response = client.get("/api/device-models")
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["protocol"] == "modbus"
+    types_by_key = {item["key"]: item for item in payload["device_types"]}
+    assert {"grid_meter", "pv", "energy_storage", "charging_station"} <= set(types_by_key)
+
+    storage_vendors = {item["key"]: item for item in types_by_key["energy_storage"]["vendors"]}
+    assert "generic" in storage_vendors
+    assert {
+        model["key"] for model in storage_vendors["generic"]["models"]
+    } >= {"generic_storage"}
+    assert any(model["default"] is True for model in storage_vendors["generic"]["models"])
+
+    charger_vendors = {item["key"]: item for item in types_by_key["charging_station"]["vendors"]}
+    assert "xj" in charger_vendors
+    assert {
+        model["key"] for model in charger_vendors["xj"]["models"]
+    } >= {"xj_dc_120kw", "xj_dc_240kw"}
+
+
 def test_register_device_defaults_to_real_source_and_online_status():
     device_manager = DeviceManager({"modbus": {"host": "127.0.0.1", "port": 1502}})
 
@@ -209,6 +263,69 @@ def test_add_modbus_device_registers_into_device_manager(monkeypatch):
     assert delete_response.status_code == 200
     assert delete_response.get_json()["success"] is True
     assert device_manager.get_device("charger-a") is None
+
+
+def test_add_modbus_device_accepts_rtu_endpoint_parameters(monkeypatch):
+    monkeypatch.setattr("edgefusion.monitor.dashboard.create_modbus_protocol", lambda config: FakeModbusProtocol(config))
+    device_manager = DeviceManager({"modbus": {"host": "127.0.0.1", "port": 1502}})
+    dashboard = build_dashboard(device_manager)
+    client = dashboard.app.test_client()
+
+    response = client.post(
+        "/api/devices/add-modbus",
+        json={
+            "device_id": "storage-rtu",
+            "device_type": "energy_storage",
+            "model": "generic_storage",
+            "transport": "rtu",
+            "serial_port": "COM3",
+            "baudrate": 9600,
+            "bytesize": 8,
+            "parity": "N",
+            "stopbits": 1,
+            "unit_id": 4,
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["success"] is True
+    candidate = device_manager.get_device_candidate("storage-rtu")
+    assert candidate["transport"] == "rtu"
+    assert candidate["serial_port"] == "COM3"
+    assert candidate["baudrate"] == 9600
+    assert candidate["bytesize"] == 8
+    assert candidate["parity"] == "N"
+    assert candidate["stopbits"] == 1
+    assert candidate["unit_id"] == 4
+    assert "soc" in candidate["capabilities"]["readable_fields"]
+
+
+def test_test_modbus_uses_selected_model_probe_register(monkeypatch):
+    FakeProbeProtocol.instances = []
+    monkeypatch.setattr("edgefusion.monitor.dashboard.create_modbus_protocol", lambda config: FakeProbeProtocol(config))
+    dashboard = build_dashboard(DeviceManager({"modbus": {"host": "127.0.0.1", "port": 1502}}))
+    client = dashboard.app.test_client()
+
+    response = client.post(
+        "/api/devices/test-modbus",
+        json={
+            "device_type": "energy_storage",
+            "model": "generic_storage",
+            "host": "192.168.1.18",
+            "port": 502,
+            "unit_id": 7,
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["success"] is True
+    assert payload["test_value"] == 61
+    assert FakeProbeProtocol.instances[0].config["host"] == "192.168.1.18"
+    assert FakeProbeProtocol.instances[0].read_calls == [
+        ("7", {"addr": 52001, "type": "u16", "scale": 1, "unit": "%"})
+    ]
 
 
 def test_activate_candidate_keeps_candidate_inventory_and_marks_connected():

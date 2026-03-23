@@ -173,11 +173,31 @@
                                 <div class="card-body">
                                     <form id="addDeviceForm">
                                         <div class="mb-3"><label class="form-label fw-bold">设备ID</label><input type="text" class="form-control" id="deviceId" placeholder="例如: charger_001" required></div>
-                                        <div class="mb-3"><label class="form-label fw-bold">设备类型</label><select class="form-select" id="deviceType"><option value="charging_station">充电桩</option><option value="pv">光伏逆变器</option><option value="energy_storage">储能系统</option><option value="grid_meter">总表</option><option value="modbus_device">通用Modbus设备</option></select></div>
-                                        <div class="mb-3"><label class="form-label fw-bold">设备型号</label><select class="form-select" id="deviceModel"><option value="">通用设备（无型号）</option><option value="generic_charger">通用充电桩</option><option value="xj_dc_120kw">许继 120kW 直流桩</option><option value="xj_dc_240kw">许继 240kW 直流桩</option></select></div>
-                                        <div class="row">
-                                            <div class="col-md-6 mb-3"><label class="form-label fw-bold">主机地址</label><input type="text" class="form-control" id="modbusHost" value="localhost" required></div>
-                                            <div class="col-md-6 mb-3"><label class="form-label fw-bold">端口</label><input type="number" class="form-control" id="modbusPort" value="502" required></div>
+                                        <div class="mb-3"><label class="form-label fw-bold">设备类型</label><select class="form-select" id="deviceType"><option value="">加载设备目录中...</option></select></div>
+                                        <div class="mb-3"><label class="form-label fw-bold">设备厂商</label><select class="form-select" id="deviceVendor"><option value="">加载设备目录中...</option></select></div>
+                                        <div class="mb-3">
+                                            <label class="form-label fw-bold">设备型号</label>
+                                            <select class="form-select" id="deviceModel"><option value="">加载设备目录中...</option></select>
+                                            <div id="deviceModelHelp" class="form-text section-note">加载设备目录中...</div>
+                                        </div>
+                                        <div class="mb-3"><label class="form-label fw-bold">接入方式</label><select class="form-select" id="deviceTransport"><option value="tcp">Modbus TCP</option><option value="rtu">Modbus RTU</option></select></div>
+                                        <div id="deviceCatalogStatus" class="section-note mb-3">加载设备目录中...</div>
+                                        <div id="tcpEndpointFields">
+                                            <div class="row">
+                                                <div class="col-md-6 mb-3"><label class="form-label fw-bold">主机地址</label><input type="text" class="form-control" id="modbusHost" value="localhost" required data-required="true"></div>
+                                                <div class="col-md-6 mb-3"><label class="form-label fw-bold">端口</label><input type="number" class="form-control" id="modbusPort" value="502" required data-required="true"></div>
+                                            </div>
+                                        </div>
+                                        <div id="rtuEndpointFields" style="display: none;">
+                                            <div class="row">
+                                                <div class="col-md-6 mb-3"><label class="form-label fw-bold">串口</label><input type="text" class="form-control" id="modbusSerialPort" placeholder="例如: COM3" data-required="true"></div>
+                                                <div class="col-md-6 mb-3"><label class="form-label fw-bold">波特率</label><input type="number" class="form-control" id="modbusBaudrate" value="9600" data-required="true"></div>
+                                            </div>
+                                            <div class="row">
+                                                <div class="col-md-4 mb-3"><label class="form-label fw-bold">数据位</label><input type="number" class="form-control" id="modbusBytesize" value="8" data-required="true"></div>
+                                                <div class="col-md-4 mb-3"><label class="form-label fw-bold">校验</label><select class="form-select" id="modbusParity" data-required="true"><option value="N">无校验 (N)</option><option value="E">偶校验 (E)</option><option value="O">奇校验 (O)</option></select></div>
+                                                <div class="col-md-4 mb-3"><label class="form-label fw-bold">停止位</label><input type="number" class="form-control" id="modbusStopbits" value="1" data-required="true"></div>
+                                            </div>
                                         </div>
                                         <div class="mb-3"><label class="form-label fw-bold">单元ID</label><input type="number" class="form-control" id="modbusUnitId" value="1" required></div>
                                         <div class="d-flex gap-2">
@@ -284,6 +304,8 @@
         let latestCollectorSummary = null;
         let latestModeSummary = null;
         let currentModeConfig = null;
+        let deviceCatalog = null;
+        let deviceTypeCatalog = [];
         let collectorTickerHandle = null;
         let autoRefreshHandle = null;
         let refreshInFlight = false;
@@ -673,12 +695,188 @@
             await Promise.all([loadSimulationScenarios(), loadDeviceCandidates(), loadConnectedDevices(), loadModeSummary()]);
         }
 
+        function getSelectedDeviceTypeEntry() {
+            const key = document.getElementById('deviceType').value;
+            return deviceTypeCatalog.find((item) => item.key === key) || null;
+        }
+
+        function getSelectedVendorEntry() {
+            const typeEntry = getSelectedDeviceTypeEntry();
+            if (!typeEntry) {
+                return null;
+            }
+            const key = document.getElementById('deviceVendor').value;
+            return (typeEntry.vendors || []).find((item) => item.key === key) || null;
+        }
+
+        function getSelectedModelEntry() {
+            const vendorEntry = getSelectedVendorEntry();
+            if (!vendorEntry) {
+                return null;
+            }
+            const key = document.getElementById('deviceModel').value;
+            return (vendorEntry.models || []).find((item) => item.key === key) || null;
+        }
+
+        function setFieldGroupState(groupId, visible) {
+            const group = document.getElementById(groupId);
+            group.style.display = visible ? '' : 'none';
+            for (const input of group.querySelectorAll('input, select')) {
+                const required = input.dataset.required === 'true';
+                input.disabled = !visible;
+                input.required = visible && required;
+            }
+        }
+
+        function syncTransportFields() {
+            const transport = document.getElementById('deviceTransport').value;
+            const useRtu = transport === 'rtu';
+            setFieldGroupState('tcpEndpointFields', !useRtu);
+            setFieldGroupState('rtuEndpointFields', useRtu);
+        }
+
+        function renderDeviceModelSummary() {
+            const help = document.getElementById('deviceModelHelp');
+            const modelEntry = getSelectedModelEntry();
+            const typeEntry = getSelectedDeviceTypeEntry();
+            const vendorEntry = getSelectedVendorEntry();
+            if (!typeEntry || !vendorEntry || !modelEntry) {
+                help.textContent = '请选择设备类型、厂商和型号。';
+                return;
+            }
+
+            const summary = [
+                `${typeEntry.label} / ${vendorEntry.label} / ${modelEntry.label}`,
+                modelEntry.default ? '默认型号' : '非默认型号'
+            ];
+            if (modelEntry.connector_count) {
+                summary.push(`默认枪数 ${modelEntry.connector_count}`);
+            }
+            help.textContent = summary.join('，');
+        }
+
+        function populateDeviceModelOptions(preferredModel = null) {
+            const select = document.getElementById('deviceModel');
+            const vendorEntry = getSelectedVendorEntry();
+            const models = vendorEntry?.models || [];
+            if (models.length === 0) {
+                select.innerHTML = '<option value="">当前厂商没有可用型号</option>';
+                select.value = '';
+                renderDeviceModelSummary();
+                return;
+            }
+
+            select.innerHTML = models
+                .map((model) => `<option value="${model.key}">${model.label}</option>`)
+                .join('');
+
+            const defaultModel = models.find((model) => model.default) || models[0];
+            const selectedModel = models.find((model) => model.key === preferredModel) || defaultModel;
+            select.value = selectedModel.key;
+            renderDeviceModelSummary();
+        }
+
+        function populateDeviceVendorOptions(preferredVendor = null, preferredModel = null) {
+            const select = document.getElementById('deviceVendor');
+            const typeEntry = getSelectedDeviceTypeEntry();
+            const vendors = typeEntry?.vendors || [];
+            if (vendors.length === 0) {
+                select.innerHTML = '<option value="">当前类型没有可用厂商</option>';
+                document.getElementById('deviceModel').innerHTML = '<option value="">当前类型没有可用型号</option>';
+                document.getElementById('deviceModel').value = '';
+                renderDeviceModelSummary();
+                return;
+            }
+
+            select.innerHTML = vendors
+                .map((vendor) => `<option value="${vendor.key}">${vendor.label}</option>`)
+                .join('');
+
+            const selectedVendor = vendors.find((vendor) => vendor.key === preferredVendor) || vendors[0];
+            select.value = selectedVendor.key;
+            populateDeviceModelOptions(preferredModel);
+        }
+
+        function populateDeviceTypeOptions(preferredType = null, preferredVendor = null, preferredModel = null) {
+            const select = document.getElementById('deviceType');
+            if (deviceTypeCatalog.length === 0) {
+                select.innerHTML = '<option value="">当前没有可接入型号</option>';
+                document.getElementById('deviceVendor').innerHTML = '<option value="">当前没有可接入型号</option>';
+                document.getElementById('deviceModel').innerHTML = '<option value="">当前没有可接入型号</option>';
+                renderDeviceModelSummary();
+                return;
+            }
+
+            select.innerHTML = deviceTypeCatalog
+                .map((item) => `<option value="${item.key}">${item.label}</option>`)
+                .join('');
+
+            const selectedType = deviceTypeCatalog.find((item) => item.key === preferredType)
+                || deviceTypeCatalog.find((item) => item.key === 'charging_station')
+                || deviceTypeCatalog[0];
+            select.value = selectedType.key;
+            populateDeviceVendorOptions(preferredVendor, preferredModel);
+        }
+
+        async function loadDeviceCatalog() {
+            const status = document.getElementById('deviceCatalogStatus');
+            status.textContent = '加载设备目录中...';
+            const data = await fetchJSON('/api/device-models');
+            if (!data || !Array.isArray(data.device_types)) {
+                deviceCatalog = null;
+                deviceTypeCatalog = [];
+                populateDeviceTypeOptions();
+                status.innerHTML = '<span class="text-danger">设备目录加载失败，请检查后端型号中心。</span>';
+                return;
+            }
+
+            deviceCatalog = data;
+            deviceTypeCatalog = data.device_types;
+            populateDeviceTypeOptions();
+            status.innerHTML = `<span class="text-success">已加载 ${deviceTypeCatalog.length} 类设备目录，新增厂商 profile 后会自动出现在这里。</span>`;
+        }
+
+        function collectDeviceEndpointPayload() {
+            const transport = document.getElementById('deviceTransport').value;
+            const payload = {
+                transport,
+                unit_id: Number(document.getElementById('modbusUnitId').value),
+            };
+
+            if (transport === 'rtu') {
+                payload.serial_port = document.getElementById('modbusSerialPort').value;
+                payload.baudrate = Number(document.getElementById('modbusBaudrate').value);
+                payload.bytesize = Number(document.getElementById('modbusBytesize').value);
+                payload.parity = document.getElementById('modbusParity').value;
+                payload.stopbits = Number(document.getElementById('modbusStopbits').value);
+            } else {
+                payload.host = document.getElementById('modbusHost').value;
+                payload.port = Number(document.getElementById('modbusPort').value);
+            }
+
+            return payload;
+        }
+
+        function resetDeviceAccessForm() {
+            document.getElementById('deviceId').value = '';
+            document.getElementById('deviceTransport').value = 'tcp';
+            document.getElementById('modbusHost').value = 'localhost';
+            document.getElementById('modbusPort').value = '502';
+            document.getElementById('modbusSerialPort').value = '';
+            document.getElementById('modbusBaudrate').value = '9600';
+            document.getElementById('modbusBytesize').value = '8';
+            document.getElementById('modbusParity').value = 'N';
+            document.getElementById('modbusStopbits').value = '1';
+            document.getElementById('modbusUnitId').value = '1';
+            syncTransportFields();
+        }
+
         async function testModbusConnection() {
             const result = await postJSON('/api/devices/test-modbus', {
-                host: document.getElementById('modbusHost').value,
-                port: Number(document.getElementById('modbusPort').value),
-                unit_id: Number(document.getElementById('modbusUnitId').value),
-                model: document.getElementById('deviceModel').value || 'generic_charger'
+                device_type: document.getElementById('deviceType').value,
+                vendor: document.getElementById('deviceVendor').value,
+                model: document.getElementById('deviceModel').value,
+                ...collectDeviceEndpointPayload()
             });
             const container = document.getElementById('testResult');
             container.innerHTML = result && result.success
@@ -705,7 +903,8 @@
                 const connectTitle = device.connected ? '该设备已在当前设备列表中' : '将候选设备接入当前系统';
                 const deleteTitle = device.connected ? '已接入设备不能直接从候选中删除，请先断开' : '删除候选设备';
                 const connectedHint = device.connected ? '<span class="pill-soft pill-info ms-2">已接入</span>' : '';
-                html += `<tr><td><code>${device.device_id}</code>${connectedHint}</td><td>${device.type || '-'}</td><td>${sourceBadge(device.source)}</td><td>${device.protocol || '-'}</td><td>${statusBadge(device.status)}</td><td><button class="btn btn-sm btn-outline-success me-1" ${connectDisabled} title="${connectTitle}" onclick="activateCandidateDevice('${device.device_id}')">接入</button><button class="btn btn-sm btn-outline-danger" ${deleteDisabled} title="${deleteTitle}" onclick="deleteCandidateDevice('${device.device_id}')">删除</button></td></tr>`;
+                const transportLabel = device.transport ? `${device.protocol || '-'} / ${String(device.transport).toUpperCase()}` : (device.protocol || '-');
+                html += `<tr><td><code>${device.device_id}</code>${connectedHint}</td><td>${device.type || '-'}</td><td>${sourceBadge(device.source)}</td><td>${transportLabel}</td><td>${statusBadge(device.status)}</td><td><button class="btn btn-sm btn-outline-success me-1" ${connectDisabled} title="${connectTitle}" onclick="activateCandidateDevice('${device.device_id}')">接入</button><button class="btn btn-sm btn-outline-danger" ${deleteDisabled} title="${deleteTitle}" onclick="deleteCandidateDevice('${device.device_id}')">删除</button></td></tr>`;
             }
             html += '</tbody></table></div>';
             container.innerHTML = html;
@@ -743,7 +942,8 @@
             }
             let html = '<div class="table-responsive"><table class="table table-hover"><thead><tr><th>设备ID</th><th>类型</th><th>来源</th><th>接入方式</th><th>状态</th><th>操作</th></tr></thead><tbody>';
             for (const device of data) {
-                html += `<tr><td><code>${device.device_id}</code></td><td>${device.type || '-'}</td><td>${sourceBadge(device.source)}</td><td>${device.protocol || '-'}</td><td>${statusBadge(device.status)}</td><td><a class="btn btn-sm btn-outline-secondary me-1" href="/api/devices/${device.device_id}" target="_blank">详情</a><button class="btn btn-sm btn-outline-warning" onclick="disconnectConnectedDevice('${device.device_id}')">断开</button></td></tr>`;
+                const transportLabel = device.transport ? `${device.protocol || '-'} / ${String(device.transport).toUpperCase()}` : (device.protocol || '-');
+                html += `<tr><td><code>${device.device_id}</code></td><td>${device.type || '-'}</td><td>${sourceBadge(device.source)}</td><td>${transportLabel}</td><td>${statusBadge(device.status)}</td><td><a class="btn btn-sm btn-outline-secondary me-1" href="/api/devices/${device.device_id}" target="_blank">详情</a><button class="btn btn-sm btn-outline-warning" onclick="disconnectConnectedDevice('${device.device_id}')">断开</button></td></tr>`;
             }
             html += '</tbody></table></div>';
             container.innerHTML = html;
@@ -898,31 +1098,33 @@
             refreshInFlight = false;
         }
 
-        document.addEventListener('DOMContentLoaded', function () {
+        document.addEventListener('DOMContentLoaded', async function () {
+            document.getElementById('deviceType').addEventListener('change', () => populateDeviceVendorOptions());
+            document.getElementById('deviceVendor').addEventListener('change', () => populateDeviceModelOptions());
+            document.getElementById('deviceModel').addEventListener('change', renderDeviceModelSummary);
+            document.getElementById('deviceTransport').addEventListener('change', syncTransportFields);
             document.getElementById('addDeviceForm').addEventListener('submit', async function (event) {
                 event.preventDefault();
                 const result = await postJSON('/api/devices/add-modbus', {
                     device_id: document.getElementById('deviceId').value,
                     device_type: document.getElementById('deviceType').value,
+                    vendor: document.getElementById('deviceVendor').value,
                     model: document.getElementById('deviceModel').value,
-                    host: document.getElementById('modbusHost').value,
-                    port: Number(document.getElementById('modbusPort').value),
-                    unit_id: Number(document.getElementById('modbusUnitId').value)
+                    ...collectDeviceEndpointPayload()
                 });
                 const container = document.getElementById('testResult');
                 if (result && result.success) {
                     container.innerHTML = `<div class="alert alert-success mb-0">${result.message}</div>`;
-                    document.getElementById('addDeviceForm').reset();
-                    document.getElementById('modbusHost').value = 'localhost';
-                    document.getElementById('modbusPort').value = '502';
-                    document.getElementById('modbusUnitId').value = '1';
+                    resetDeviceAccessForm();
                     await Promise.all([loadDeviceCandidates(), loadModeSummary()]);
                 } else {
                     container.innerHTML = `<div class="alert alert-danger mb-0">${result?.message || '添加失败'}</div>`;
                 }
             });
+            syncTransportFields();
+            await loadDeviceCatalog();
             startCollectorTicker();
-            refreshAllData();
+            await refreshAllData();
         });
     </script>
 </body>

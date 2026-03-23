@@ -6,11 +6,12 @@ import time
 import os
 from ..device_manager import DeviceManager
 from ..charger_layout import build_connector_device_id
+from ..adapters.model_catalog import get_modbus_device_model_catalog, get_modbus_model_probe_register
 from ..strategy import StrategyBase
 from ..logger import get_logger
 from .collector import DataCollector
 from .database import Database
-from ..protocol import ModbusProtocol, SimulationProtocol
+from ..protocol import ModbusProtocol, SimulationProtocol, create_modbus_protocol
 
 
 class Dashboard:
@@ -90,6 +91,13 @@ class Dashboard:
         @self.app.route('/api/devices/candidates', methods=['GET'])
         def get_device_candidates():
             return jsonify(self._get_candidate_device_inventory())
+
+        @self.app.route('/api/device-models', methods=['GET'])
+        def get_device_models():
+            protocol = (request.args.get('protocol') or 'modbus').lower()
+            if protocol != 'modbus':
+                return jsonify({'protocol': protocol, 'device_types': []})
+            return jsonify(get_modbus_device_model_catalog())
         
         # 设备详情
         @self.app.route('/api/devices/<device_id>', methods=['GET'])
@@ -195,32 +203,32 @@ class Dashboard:
         @self.app.route('/api/devices/test-modbus', methods=['POST'])
         def test_modbus_connection():
             try:
-                data = request.get_json()
-                host = data.get('host', 'localhost')
-                port = data.get('port', 502)
+                data = request.get_json() or {}
                 unit_id = data.get('unit_id', 1)
-                model = data.get('model', 'generic_charger')  # 【新增】型号
-                
-                config = {'host': host, 'port': port, 'timeout': 5}
-                protocol = ModbusProtocol(config)
-                
-                if protocol.connect():
-                    # 【修改】根据型号选择测试寄存器
-                    if model.startswith('xj_'):
-                        # 许继型号：读整桩信息 0x1000（枪个数）
-                        test_value = protocol.read_data(str(unit_id), '4096')  # 0x1000 = 4096
-                    else:
-                        # 通用型号：读地址 0（电压）
-                        test_value = protocol.read_data(str(unit_id), '0')
-                    
-                    protocol.disconnect()
-                    return jsonify({
-                        'success': True, 
-                        'message': '连接成功',
-                        'test_value': test_value
-                    })
-                else:
+                device_type = data.get('device_type')
+                vendor = data.get('vendor')
+                model = data.get('model')
+                config = self._build_modbus_endpoint_config(data)
+                protocol = create_modbus_protocol(config)
+
+                if not protocol.connect():
                     return jsonify({'success': False, 'message': '连接失败'})
+
+                try:
+                    probe_register = get_modbus_model_probe_register(
+                        device_type=str(device_type) if device_type is not None else None,
+                        model=str(model) if model is not None else None,
+                        vendor=str(vendor) if vendor is not None else None,
+                    ) or {'addr': 0, 'type': 'u16'}
+                    test_value = protocol.read_data(str(unit_id), probe_register)
+                finally:
+                    protocol.disconnect()
+
+                return jsonify({
+                    'success': True,
+                    'message': '连接成功',
+                    'test_value': test_value
+                })
             except Exception as e:
                 return jsonify({'success': False, 'message': str(e)})
         
@@ -228,11 +236,8 @@ class Dashboard:
         @self.app.route('/api/devices/add-modbus', methods=['POST'])
         def add_modbus_device():
             try:
-                data = request.get_json()
+                data = request.get_json() or {}
                 device_id = data.get('device_id')
-                host = data.get('host', 'localhost')
-                port = data.get('port', 502)
-                unit_id = data.get('unit_id', 1)
                 device_type = data.get('device_type', 'modbus_device')
                 model = data.get('model')  # 【新增】型号标识
                 
@@ -240,8 +245,8 @@ class Dashboard:
                     return jsonify({'success': False, 'message': '设备ID不能为空'})
                 
                 # 测试连接
-                config = {'host': host, 'port': port, 'timeout': 5}
-                protocol = ModbusProtocol(config)
+                config = self._build_modbus_endpoint_config(data)
+                protocol = create_modbus_protocol(config)
                 
                 if not protocol.connect():
                     return jsonify({'success': False, 'message': '设备连接失败'})
@@ -252,15 +257,15 @@ class Dashboard:
                 device_info = {
                     'device_id': device_id,
                     'type': device_type,
+                    'vendor': data.get('vendor'),
                     'model': model,  # 【新增】型号标识
                     'protocol': 'modbus',
-                    'host': host,
-                    'port': port,
-                    'unit_id': unit_id,
+                    'unit_id': data.get('unit_id', 1),
                     'status': 'online'
                 }
+                device_info.update(config)
 
-                self._ensure_modbus_protocol(host, port)
+                self._ensure_modbus_protocol(config)
                 if not self.device_manager.register_device_candidate(device_info):
                     return jsonify({'success': False, 'message': '候选设备注册失败'})
                 
@@ -283,13 +288,9 @@ class Dashboard:
                 if not device_info:
                     return jsonify({'success': False, 'message': '设备不存在或不支持该接口'})
                 
-                config = {
-                    'host': device_info['host'],
-                    'port': device_info['port'],
-                    'timeout': 5
-                }
+                config = self._build_modbus_endpoint_config(device_info)
                 
-                protocol = ModbusProtocol(config)
+                protocol = create_modbus_protocol(config)
                 if not protocol.connect():
                     return jsonify({'success': False, 'message': '设备连接失败'})
                 
@@ -316,13 +317,9 @@ class Dashboard:
                 if not device_info:
                     return jsonify({'success': False, 'message': '设备不存在或不支持该接口'})
                 
-                config = {
-                    'host': device_info['host'],
-                    'port': device_info['port'],
-                    'timeout': 5
-                }
+                config = self._build_modbus_endpoint_config(device_info)
                 
-                protocol = ModbusProtocol(config)
+                protocol = create_modbus_protocol(config)
                 if not protocol.connect():
                     return jsonify({'success': False, 'message': '设备连接失败'})
                 
@@ -523,19 +520,37 @@ class Dashboard:
             'online_devices': online_devices
         }
 
-    def _ensure_modbus_protocol(self, host: str, port: int):
+    def _build_modbus_endpoint_config(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        transport = str(payload.get('transport', payload.get('mode', 'tcp'))).lower()
+        timeout = int(payload.get('timeout', 5))
+        if transport in {'rtu', 'serial'}:
+            return {
+                'transport': 'rtu',
+                'serial_port': str(payload.get('serial_port', payload.get('port', ''))),
+                'baudrate': int(payload.get('baudrate', 9600)),
+                'bytesize': int(payload.get('bytesize', 8)),
+                'parity': str(payload.get('parity', 'N')),
+                'stopbits': int(payload.get('stopbits', 1)),
+                'timeout': timeout,
+            }
+
+        return {
+            'transport': 'tcp',
+            'host': str(payload.get('host', 'localhost')),
+            'port': int(payload.get('port', 502)),
+            'timeout': timeout,
+        }
+
+    def _ensure_modbus_protocol(self, endpoint_config: Dict[str, Any]):
         """确保设备管理器中存在Modbus协议占位实例。"""
         if 'modbus' in self.device_manager.protocols:
             protocol = self.device_manager.protocols['modbus']
-            if not protocol.is_connected:
+            is_connected = bool(getattr(protocol, 'is_connected', getattr(protocol, 'connected', False)))
+            if not is_connected:
                 protocol.connect()
             return
 
-        protocol = ModbusProtocol({
-            'host': host,
-            'port': port,
-            'timeout': 5
-        })
+        protocol = create_modbus_protocol(endpoint_config)
         protocol.connect()
         self.device_manager.protocols['modbus'] = protocol
 
@@ -545,9 +560,13 @@ class Dashboard:
         if not device_info:
             return None
 
-        required_fields = ('host', 'port', 'unit_id')
         if device_info.get('protocol') != 'modbus':
             return None
+        transport = str(device_info.get('transport', 'tcp')).lower()
+        if transport in {'rtu', 'serial'}:
+            required_fields = ('serial_port', 'unit_id')
+        else:
+            required_fields = ('host', 'port', 'unit_id')
         if any(field not in device_info for field in required_fields):
             return None
 
