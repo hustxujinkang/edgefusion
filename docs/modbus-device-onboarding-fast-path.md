@@ -97,7 +97,97 @@
 - 已经联调通过
 - 映射结构相对稳定
 
-## 4. 接入步骤
+## 4. 当前仓库里，具体改哪个文件
+
+先说当前真实情况：
+
+- 当前仓库**还没有**稳定的“持久化设备清单配置文件”
+- 所以你如果要把一个新厂商设备真正接进当前后台，**多数情况下还是要改代码**
+- 真正的差别只在于：你是先做**临时联调代码**，还是直接做**可复用 profile 代码**
+
+建议按下面三档理解。
+
+### 4.1 只想先测通 Modbus 连通性，不做语义接入
+
+这时先不要碰 profile。
+
+看和用这些位置：
+
+- `edgefusion/monitor/dashboard.py`
+
+当前已有的能力：
+
+- `/api/devices/add-modbus`
+- `/api/devices/<device_id>/read-register`
+- `/api/devices/<device_id>/write-register`
+
+这条线适合做：
+
+- IP/端口/从站号是否能连通
+- 原始寄存器能不能读到
+- 原始寄存器能不能写进去
+
+这一步的目标只是确认“设备通不通”，不是确认“语义字段已经接入”。
+
+### 4.2 想最快把语义字段接进当前后台
+
+这是当前项目里最现实的第一落点。
+
+直接参考这些文件：
+
+- `test_device_register_mapping.py`
+- `test_device_adapter_layer.py`
+- `docs/examples/modbus-explicit-mapping-templates.yaml`
+
+当前最快做法是：
+
+1. 先在 `docs/examples/modbus-explicit-mapping-templates.yaml` 按厂家文档填一份最小 `device_info`
+2. 再把同样结构的 `device_info` 临时放进你自己的联调脚本或测试里
+3. 调用 `DeviceManager.register_device(...)` 或 `register_device_candidate(...)`
+4. 用 `read_device_data(...)` / `write_device_data(...)` 走统一语义链路
+
+在当前仓库里，最直接可照抄的示例就是：
+
+- `test_device_register_mapping.py`
+
+这里已经有：
+
+- `grid_meter`
+- `pv`
+- `energy_storage`
+- `charging_station`
+
+的显式 `telemetry_map` / `control_map` 写法。
+
+如果你现在要接第一家真机，建议先按这个方式改：
+
+- 新建一个本地联调脚本，或者
+- 临时在现有测试/验证脚本里加一个真实 `device_info`
+
+**不要**第一步就去改 profile。
+
+### 4.3 想把这个厂家做成后续可复用支持
+
+等显式映射已经联调通过，再走这条线。
+
+优先改这些文件：
+
+- `edgefusion/adapters/modbus/profiles/vendors/<vendor>.py`
+- `edgefusion/adapters/modbus/profiles/__init__.py`
+- 如是充电桩，还要关注 `edgefusion/adapters/charger_profiles.py`
+- 必要时补 `test_device_adapter_layer.py`
+- 必要时补 `test_device_register_mapping.py`
+
+这里的职责是：
+
+- 给厂家型号补默认 `telemetry_map`
+- 给厂家型号补默认 `control_map`
+- 补 `status_map` / `mode_map`
+- 如果是充电桩，补 connector 级默认映射
+
+这一步完成后，后面同型号设备就不必再手写整份显式映射。
+
+## 5. 接入步骤
 
 ### Step 1: 建一份最小设备配置
 
@@ -111,6 +201,11 @@
 - 最小 `control_map`
 
 不要先录厂家私有扩展字段。
+
+如果按当前仓库实际落地：
+
+- 临时联调：先在测试/脚本里构造 `device_info`
+- 可复用接入：联调通过后再转成 `adapters/modbus/profiles/vendors/` 里的 profile
 
 ### Step 2: 先读，不要先控
 
@@ -168,7 +263,7 @@
 
 这些字段可以放进 `telemetry_map` / `control_map`，但不要让策略层默认依赖。
 
-## 5. 什么时候要改协议层
+## 6. 什么时候要改协议层
 
 大多数设备接入不需要改协议层。
 
@@ -184,7 +279,13 @@
 - “地址 + 类型 + 倍率” 这类情况，先在 map 里解决
 - “复杂命令报文” 才进协议层
 
-## 6. 联调完成标准
+如果真要改，优先看：
+
+- `edgefusion/protocol/modbus.py`
+
+当前复杂命令的现成例子也是在这里展开的。
+
+## 7. 联调完成标准
 
 ### 6.1 储能
 
@@ -204,7 +305,7 @@
 - `power` 可读
 - 最少一个控制字段能正确下发
 
-## 7. 从显式映射升级到 profile
+## 8. 从显式映射升级到 profile
 
 当显式映射已经验证通过，再做这一步：
 
@@ -219,7 +320,7 @@
 - 不要在业务层加 `if 厂家A`
 - 不要把临时联调寄存器写死在策略层
 
-## 8. 推荐使用方式
+## 9. 推荐使用方式
 
 建议以后拿到厂家 Modbus Excel/PDF 后，固定按下面顺序推进：
 
