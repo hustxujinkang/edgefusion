@@ -79,7 +79,8 @@ class Dashboard:
         def update_control_settings():
             data = request.get_json() or {}
             use_simulated_devices = bool(data.get('use_simulated_devices', True))
-            settings = self._set_control_settings(use_simulated_devices)
+            read_only = bool(data.get('read_only', False))
+            settings = self._set_control_settings(use_simulated_devices, read_only)
             return jsonify({'success': True, **settings})
         
         # 设备列表
@@ -309,6 +310,8 @@ class Dashboard:
         @self.app.route('/api/devices/<device_id>/write-register', methods=['POST'])
         def write_modbus_register(device_id):
             try:
+                if self.device_manager.is_read_only():
+                    return self._read_only_response()
                 data = request.get_json()
                 register = data.get('register', '0')
                 value = data.get('value', 0)
@@ -393,6 +396,8 @@ class Dashboard:
         def control_device(device_id):
             """设备控制API"""
             try:
+                if self.device_manager.is_read_only():
+                    return self._read_only_response()
                 data = request.get_json()
                 action = data.get('action')  # start_charging/stop_charging/set_power/emergency_stop/clear_fault
                 gun_id = data.get('gun_id', 1)
@@ -599,6 +604,7 @@ class Dashboard:
     def _build_fallback_mode_config(self) -> Dict[str, Any]:
         config = getattr(self.data_collector, 'config', None)
         use_simulated_devices = True
+        read_only = bool(self.device_manager.is_read_only())
         state_config = {'max_data_age_seconds': 30, 'manual_override': False}
         export_settings = {
             'export_limit_w': 5000,
@@ -609,6 +615,7 @@ class Dashboard:
 
         if config and hasattr(config, 'get'):
             use_simulated_devices = bool(config.get('control.use_simulated_devices', True))
+            read_only = bool(config.get('control.read_only', read_only))
             state_config['max_data_age_seconds'] = int(config.get('control.mode_controller.state.max_data_age_seconds', 30))
             state_config['manual_override'] = bool(config.get('control.mode_controller.state.manual_override', False))
             export_enabled = bool(config.get('control.mode_controller.mode.export_protect_enabled', True))
@@ -618,6 +625,7 @@ class Dashboard:
 
         return {
             'use_simulated_devices': use_simulated_devices,
+            'read_only': read_only,
             'state': state_config,
             'modes': {
                 'manual_override': {
@@ -716,7 +724,8 @@ class Dashboard:
             'current_mode': 'business_normal',
             'current_mode_label': '正常运行',
             'current_reason': 'mode_controller_unavailable',
-            'control_state': 'monitor_only',
+            'control_state': 'read_only' if self.device_manager.is_read_only() else 'monitor_only',
+            'read_only': bool(self.device_manager.is_read_only()),
             'supported_modes': [],
             'key_measurements': {
                 'timestamp': None,
@@ -752,10 +761,13 @@ class Dashboard:
             mode_config = self._build_fallback_mode_config()
             if 'use_simulated_devices' in updates:
                 mode_config['use_simulated_devices'] = bool(updates['use_simulated_devices'])
+            if 'read_only' in updates:
+                mode_config['read_only'] = bool(updates['read_only'])
 
         config = getattr(self.data_collector, 'config', None)
         if config and hasattr(config, 'set'):
             config.set('control.use_simulated_devices', mode_config['use_simulated_devices'])
+            config.set('control.read_only', bool(mode_config.get('read_only', False)))
             config.set(
                 'control.mode_controller.state.max_data_age_seconds',
                 int(mode_config['state']['max_data_age_seconds']),
@@ -785,18 +797,32 @@ class Dashboard:
         for strategy in self.strategies.values():
             if hasattr(strategy, 'use_simulated_devices'):
                 strategy.use_simulated_devices = bool(mode_config['use_simulated_devices'])
+            if hasattr(strategy, 'read_only'):
+                strategy.read_only = bool(mode_config.get('read_only', False))
             if hasattr(strategy, 'config') and isinstance(strategy.config, dict):
                 strategy.config['use_simulated_devices'] = bool(mode_config['use_simulated_devices'])
+                strategy.config['read_only'] = bool(mode_config.get('read_only', False))
+
+        self.device_manager.set_read_only(bool(mode_config.get('read_only', False)))
 
         return mode_config
 
     def _get_control_settings(self) -> Dict[str, Any]:
         mode_config = self._get_mode_config()
-        return {'use_simulated_devices': bool(mode_config.get('use_simulated_devices', True))}
+        return {
+            'use_simulated_devices': bool(mode_config.get('use_simulated_devices', True)),
+            'read_only': bool(mode_config.get('read_only', False)),
+        }
 
-    def _set_control_settings(self, use_simulated_devices: bool) -> Dict[str, Any]:
-        mode_config = self._set_mode_config({'use_simulated_devices': use_simulated_devices})
-        return {'use_simulated_devices': bool(mode_config.get('use_simulated_devices', True))}
+    def _set_control_settings(self, use_simulated_devices: bool, read_only: bool) -> Dict[str, Any]:
+        mode_config = self._set_mode_config({'use_simulated_devices': use_simulated_devices, 'read_only': read_only})
+        return {
+            'use_simulated_devices': bool(mode_config.get('use_simulated_devices', True)),
+            'read_only': bool(mode_config.get('read_only', False)),
+        }
+
+    def _read_only_response(self):
+        return jsonify({'success': False, 'message': '系统当前处于只读观察模式，已拒绝写入操作'}), 403
     
     def get_strategies_status(self) -> List[Dict[str, Any]]:
         """获取策略状态

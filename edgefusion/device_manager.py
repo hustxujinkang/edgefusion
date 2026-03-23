@@ -41,6 +41,13 @@ class DeviceManager:
         )
         self.protocols: Dict[str, ProtocolBase] = self.protocol_registry.protocols
         self.endpoint_protocols: Dict[str, ProtocolBase] = self.protocol_registry.endpoint_protocols
+        self.read_only = bool(config.get('read_only', False))
+
+    def set_read_only(self, enabled: bool):
+        self.read_only = bool(enabled)
+
+    def is_read_only(self) -> bool:
+        return bool(self.read_only)
 
     def _normalize_device_info(self, device_info: Dict[str, Any]) -> Dict[str, Any]:
         return self.inventory.normalize(device_info)
@@ -293,6 +300,10 @@ class DeviceManager:
             bool: 写入是否成功
         """
         try:
+            if self.is_read_only():
+                self.logger.warning(f"系统处于只读观察模式，拒绝写入: {device_id}.{register}")
+                return False
+
             device_info = self.get_device(device_id)
             if not device_info:
                 self.logger.warning(f"设备不存在: {device_id}")

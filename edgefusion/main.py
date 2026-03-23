@@ -58,6 +58,7 @@ class EdgeFusion:
             simulation_config.pop('enabled', None)
             device_config['simulation'] = simulation_config
         self.device_manager = DeviceManager(device_config)
+        self.device_manager.set_read_only(bool(self.config.get('control.read_only', False)))
         self.logger.info("初始化设备管理器完成")
         
         # 初始化数据库（兼容模式）
@@ -102,6 +103,7 @@ class EdgeFusion:
         """初始化策略"""
         controller_config = dict(self.config.get('control.mode_controller', {}))
         controller_config['use_simulated_devices'] = self.config.get('control.use_simulated_devices', True)
+        controller_config['read_only'] = self.config.get('control.read_only', False)
         self.strategies['mode_controller'] = ModeControllerStrategy(
             controller_config,
             self.device_manager,

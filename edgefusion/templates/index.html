@@ -76,6 +76,16 @@
             background: linear-gradient(135deg, #1f7a8c 0%, #2e5b85 100%); color: white; box-shadow: 0 12px 24px rgba(31, 122, 140, 0.28); z-index: 1000;
         }
         .section-note { color: var(--text-muted); font-size: 0.9rem; }
+        .mode-config-savebar {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+            padding: 1rem 1.25rem;
+            border-radius: 1rem;
+            background: linear-gradient(135deg, #f8fcfe 0%, #edf5f9 100%);
+            border: 1px solid #c9e3ea;
+            box-shadow: var(--shadow-soft);
+        }
         code { color: #0b5ed7; }
     </style>
 </head>
@@ -248,9 +258,10 @@
                             <div class="card h-100">
                                 <div class="card-header">全局控制开关<div class="card-subtitle">模拟设备可以接入系统，但是否参与模式判断和控制分配由这里统一决定。</div></div>
                                 <div class="card-body">
-                                    <div class="form-check form-switch mb-3"><input class="form-check-input" type="checkbox" role="switch" id="useSimulatedDevicesSwitch"><label class="form-check-label fw-bold" for="useSimulatedDevicesSwitch">模拟设备参与模式判断</label></div>
+                                    <div class="form-check form-switch mb-3"><input class="form-check-input" type="checkbox" role="switch" id="useSimulatedDevicesSwitch" onchange="markModeConfigDirty()"><label class="form-check-label fw-bold" for="useSimulatedDevicesSwitch">模拟设备参与模式判断</label></div>
+                                    <div class="form-check form-switch mb-3"><input class="form-check-input" type="checkbox" role="switch" id="readOnlySwitch" onchange="markModeConfigDirty()"><label class="form-check-label fw-bold" for="readOnlySwitch">只读观察模式</label></div>
                                     <div class="section-note">关闭后，simulation 设备仍会显示在设备接入页，但不会被纳入模式判断，也不会参与控制分配。</div>
-                                    <div id="controlSettingsStatus" class="mt-3 section-note">检测设置中...</div>
+                                    <div class="section-note">开启后系统仍会采集和判断模式，但会拒绝所有自动控制和人工写入。</div>
                                 </div>
                             </div>
                         </div>
@@ -259,10 +270,24 @@
                                 <div class="card-header">模式参数<div class="card-subtitle">按模式元数据动态展示可配置项，不再把反送保护写死成唯一配置面板。</div></div>
                                 <div class="card-body">
                                     <div id="modeConfigPanels" class="d-flex flex-column gap-3"><div class="panel-empty">加载模式配置中...</div></div>
-                                    <div class="mt-4 d-flex gap-2">
-                                        <button class="btn btn-primary" onclick="saveModeConfig()"><i class="bi bi-save me-1"></i>保存模式配置</button>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-12">
+                            <div class="mode-config-savebar" id="modeConfigSaveBar">
+                                <div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-center gap-3">
+                                    <div>
+                                        <div class="fw-bold">统一保存全局控制开关和模式参数</div>
+                                        <div class="section-note">上方两块区域的改动会先停留在页面，点击这里统一写入后台配置。</div>
+                                    </div>
+                                    <div class="d-flex gap-2">
+                                        <button class="btn btn-primary" id="saveModeConfigButton" onclick="saveModeConfig()" disabled><i class="bi bi-save me-1"></i>保存模式配置</button>
                                         <button class="btn btn-outline-secondary" onclick="loadModeConfig()"><i class="bi bi-arrow-repeat me-1"></i>重新读取</button>
                                     </div>
+                                </div>
+                                <div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-center gap-2">
+                                    <span class="pill-soft pill-secondary" id="modeConfigDirtyBadge">当前无未保存修改</span>
+                                    <div id="controlSettingsStatus" class="section-note">检测设置中...</div>
                                 </div>
                             </div>
                         </div>
@@ -309,6 +334,7 @@
         let collectorTickerHandle = null;
         let autoRefreshHandle = null;
         let refreshInFlight = false;
+        let modeConfigDirty = false;
 
         const REASON_LABELS = {
             export_limit_exceeded: '总表反送超过配置阈值',
@@ -346,9 +372,13 @@
         }
 
         function controlStateBadge(controlState) {
-            return controlState === 'closed_loop'
-                ? '<span class="pill-soft pill-success">可闭环</span>'
-                : '<span class="pill-soft pill-warning">仅监控</span>';
+            if (controlState === 'closed_loop') {
+                return '<span class="pill-soft pill-success">可闭环</span>';
+            }
+            if (controlState === 'read_only') {
+                return '<span class="pill-soft pill-secondary">只读观察</span>';
+            }
+            return '<span class="pill-soft pill-warning">仅监控</span>';
         }
 
         function yesNoBadge(value) {
@@ -525,8 +555,30 @@
             }
             currentModeConfig = data;
             document.getElementById('useSimulatedDevicesSwitch').checked = !!data.use_simulated_devices;
+            document.getElementById('readOnlySwitch').checked = !!data.read_only;
             renderModeConfigPanels(data);
-            status.innerHTML = '<span class="text-success"><i class="bi bi-check-circle me-1"></i>模式配置已同步</span>';
+            setModeConfigDirty(false, '<span class="text-success"><i class="bi bi-check-circle me-1"></i>模式配置已同步</span>');
+        }
+
+        function setModeConfigDirty(dirty, statusHtml = null) {
+            modeConfigDirty = !!dirty;
+            const badge = document.getElementById('modeConfigDirtyBadge');
+            const saveButton = document.getElementById('saveModeConfigButton');
+            const status = document.getElementById('controlSettingsStatus');
+            if (badge) {
+                badge.className = modeConfigDirty ? 'pill-soft pill-warning' : 'pill-soft pill-secondary';
+                badge.textContent = modeConfigDirty ? '已修改未保存' : '当前无未保存修改';
+            }
+            if (saveButton) {
+                saveButton.disabled = !modeConfigDirty;
+            }
+            if (status && statusHtml !== null) {
+                status.innerHTML = statusHtml;
+            }
+        }
+
+        function markModeConfigDirty() {
+            setModeConfigDirty(true, '<span class="text-warning"><i class="bi bi-exclamation-circle me-1"></i>全局控制开关或模式参数已修改，尚未保存</span>');
         }
 
         function renderModeConfigPanels(config) {
@@ -565,7 +617,7 @@
                 if (mode.toggleable) {
                     html += `
                         <div class="form-check form-switch mb-3">
-                            <input class="form-check-input" type="checkbox" role="switch" id="mode-toggle-${mode.name}" data-mode-toggle="${mode.name}" ${mode.enabled ? 'checked' : ''}>
+                            <input class="form-check-input" type="checkbox" role="switch" id="mode-toggle-${mode.name}" data-mode-toggle="${mode.name}" onchange="markModeConfigDirty()" ${mode.enabled ? 'checked' : ''}>
                             <label class="form-check-label fw-bold" for="mode-toggle-${mode.name}">启用${mode.label || mode.name}</label>
                         </div>
                     `;
@@ -582,7 +634,7 @@
                             html += `
                                 <div class="col-12">
                                     <div class="form-check form-switch mt-1">
-                                        <input class="form-check-input" type="checkbox" role="switch" id="${fieldId}" data-mode-field="${mode.name}:${field.key}" data-field-type="boolean" ${value ? 'checked' : ''} ${editable ? '' : 'disabled'}>
+                                        <input class="form-check-input" type="checkbox" role="switch" id="${fieldId}" data-mode-field="${mode.name}:${field.key}" data-field-type="boolean" onchange="markModeConfigDirty()" ${value ? 'checked' : ''} ${editable ? '' : 'disabled'}>
                                         <label class="form-check-label fw-bold" for="${fieldId}">${field.label}</label>
                                     </div>
                                     ${field.description ? `<div class="section-note mt-1">${field.description}</div>` : ''}
@@ -598,6 +650,7 @@
                                         id="${fieldId}"
                                         data-mode-field="${mode.name}:${field.key}"
                                         data-field-type="${field.type || 'number'}"
+                                        onchange="markModeConfigDirty()"
                                         value="${value ?? ''}"
                                         ${field.min !== undefined ? `min="${field.min}"` : ''}
                                         ${field.max !== undefined ? `max="${field.max}"` : ''}
@@ -654,14 +707,14 @@
 
             const payload = {
                 use_simulated_devices: document.getElementById('useSimulatedDevicesSwitch').checked,
+                read_only: document.getElementById('readOnlySwitch').checked,
                 modes: modesPayload
             };
             const result = await postJSON('/api/modes/config', payload);
             if (!result || !result.success) {
-                status.innerHTML = '<span class="text-danger"><i class="bi bi-x-circle me-1"></i>保存失败</span>';
+                setModeConfigDirty(true, '<span class="text-danger"><i class="bi bi-x-circle me-1"></i>保存失败</span>');
                 return;
             }
-            status.innerHTML = '<span class="text-success"><i class="bi bi-check-circle me-1"></i>模式配置已更新</span>';
             await Promise.all([loadModeConfig(), loadModeSummary()]);
         }
 
@@ -1075,8 +1128,31 @@
                 clearInterval(autoRefreshHandle);
             }
             autoRefreshHandle = setInterval(() => {
-                refreshAllData();
+                refreshRuntimePanels();
             }, refreshMs);
+        }
+
+        async function refreshRuntimePanels() {
+            await Promise.all([
+                loadRuntimeStatus(),
+                loadModeSummary()
+            ]);
+        }
+
+        async function refreshDevicePanels() {
+            await Promise.all([
+                loadSimulationScenarios(),
+                loadDeviceCandidates(),
+                loadConnectedDevices()
+            ]);
+        }
+
+        async function refreshDiagnosticsPanels() {
+            await Promise.all([
+                loadCollectorStatus(),
+                loadDatabaseStats(),
+                loadLiveSnapshots()
+            ]);
         }
 
         async function refreshAllData() {
@@ -1084,16 +1160,12 @@
                 return;
             }
             refreshInFlight = true;
+            const modeConfigTask = modeConfigDirty ? Promise.resolve() : loadModeConfig();
             await Promise.all([
-                loadRuntimeStatus(),
-                loadModeSummary(),
-                loadModeConfig(),
-                loadSimulationScenarios(),
-                loadDeviceCandidates(),
-                loadConnectedDevices(),
-                loadCollectorStatus(),
-                loadDatabaseStats(),
-                loadLiveSnapshots()
+                refreshRuntimePanels(),
+                modeConfigTask,
+                refreshDevicePanels(),
+                refreshDiagnosticsPanels()
             ]);
             refreshInFlight = false;
         }

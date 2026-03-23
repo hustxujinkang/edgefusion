@@ -1,3 +1,5 @@
+import re
+
 import werkzeug
 
 from edgefusion.device_manager import DeviceManager
@@ -39,6 +41,7 @@ class DummyConfig:
 class DummyStrategy:
     def __init__(self):
         self.use_simulated_devices = True
+        self.read_only = False
         self.config = {}
 
     def get_status(self):
@@ -79,6 +82,19 @@ class FakeProbeProtocol(FakeModbusProtocol):
     def read_data(self, device_id, register):
         self.read_calls.append((device_id, register))
         return 61
+
+
+class FakeWriteProtocol(FakeModbusProtocol):
+    instances = []
+
+    def __init__(self, config):
+        super().__init__(config)
+        self.write_calls = []
+        FakeWriteProtocol.instances.append(self)
+
+    def write_data(self, device_id, register, value):
+        self.write_calls.append((device_id, register, value))
+        return True
 
 
 class RecordingDeviceManager(DeviceManager):
@@ -170,6 +186,51 @@ def test_dashboard_root_uses_dynamic_device_catalog_selectors():
     assert "加载设备目录中" in html
     assert "许继 120kW 直流桩" not in html
     assert "通用充电桩" not in html
+
+
+def test_dashboard_root_uses_shared_mode_config_savebar_and_dirty_state():
+    dashboard = build_dashboard(DeviceManager({}))
+    client = dashboard.app.test_client()
+
+    response = client.get("/")
+
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    assert 'id="useSimulatedDevicesSwitch" onchange="markModeConfigDirty()"' in html
+    assert 'id="readOnlySwitch" onchange="markModeConfigDirty()"' in html
+    assert 'id="modeConfigSaveBar"' in html
+    assert "统一保存全局控制开关和模式参数" in html
+    assert 'id="modeConfigDirtyBadge"' in html
+    assert "当前无未保存修改" in html
+
+
+def test_dashboard_root_skips_auto_reloading_mode_config_while_dirty():
+    dashboard = build_dashboard(DeviceManager({}))
+    client = dashboard.app.test_client()
+
+    response = client.get("/")
+
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    assert "modeConfigDirty ? Promise.resolve() : loadModeConfig()" in html
+
+
+def test_dashboard_root_auto_refreshes_only_runtime_panels():
+    dashboard = build_dashboard(DeviceManager({}))
+    client = dashboard.app.test_client()
+
+    response = client.get("/")
+
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    assert "async function refreshRuntimePanels()" in html
+    assert "async function refreshDevicePanels()" in html
+    assert "async function refreshDiagnosticsPanels()" in html
+    assert re.search(
+        r"function scheduleAutoRefresh\(\)\s*\{.*?setInterval\(\(\) => \{\s*refreshRuntimePanels\(\);",
+        html,
+        re.S,
+    )
 
 
 def test_device_models_endpoint_returns_supported_types_vendors_and_models():
@@ -503,6 +564,65 @@ def test_device_control_action_rejects_set_soc_without_semantic_mapping(monkeypa
     assert device_manager.write_calls == []
 
 
+def test_dashboard_blocks_direct_modbus_write_register_when_read_only_enabled(monkeypatch):
+    FakeWriteProtocol.instances = []
+    monkeypatch.setattr("edgefusion.monitor.dashboard.create_modbus_protocol", lambda config: FakeWriteProtocol(config))
+    device_manager = DeviceManager({"modbus": {"host": "127.0.0.1", "port": 1502}})
+    device_manager.set_read_only(True)
+    assert device_manager.register_device(
+        {
+            "device_id": "storage-tcp",
+            "type": "energy_storage",
+            "protocol": "modbus",
+            "host": "127.0.0.1",
+            "port": 1502,
+            "unit_id": 1,
+        }
+    ) is True
+    dashboard = build_dashboard(device_manager)
+    client = dashboard.app.test_client()
+
+    response = client.post("/api/devices/storage-tcp/write-register", json={"register": "42001", "value": 2500})
+
+    assert response.status_code == 403
+    payload = response.get_json()
+    assert payload["success"] is False
+    assert "只读" in payload["message"]
+    assert FakeWriteProtocol.instances == []
+
+
+def test_dashboard_blocks_semantic_control_actions_when_read_only_enabled(monkeypatch):
+    class _FailOnInitProtocol:
+        def __init__(self, config):
+            raise AssertionError("read-only control should not instantiate protocol")
+
+    monkeypatch.setattr("edgefusion.monitor.dashboard.ModbusProtocol", _FailOnInitProtocol)
+
+    device_manager = RecordingDeviceManager()
+    device_manager.set_read_only(True)
+    assert device_manager.register_device(
+        {
+            "device_id": "charger-generic",
+            "type": "charging_station",
+            "model": "generic_charger",
+            "protocol": "modbus",
+            "host": "127.0.0.1",
+            "port": 1502,
+            "unit_id": 1,
+        }
+    ) is True
+    dashboard = build_dashboard(device_manager)
+    client = dashboard.app.test_client()
+
+    response = client.post("/api/devices/charger-generic/control", json={"action": "stop_charging", "gun_id": 1})
+
+    assert response.status_code == 403
+    payload = response.get_json()
+    assert payload["success"] is False
+    assert "只读" in payload["message"]
+    assert device_manager.write_calls == []
+
+
 def test_gun_data_endpoint_reads_connector_semantics_without_direct_modbus(monkeypatch):
     class _FailOnInitProtocol:
         def __init__(self, config):
@@ -681,12 +801,17 @@ def test_control_settings_endpoint_updates_mode_controller_toggle():
     response = client.get("/api/control/settings")
     assert response.status_code == 200
     assert response.get_json()["use_simulated_devices"] is True
+    assert response.get_json()["read_only"] is False
 
-    update_response = client.post("/api/control/settings", json={"use_simulated_devices": False})
+    update_response = client.post("/api/control/settings", json={"use_simulated_devices": False, "read_only": True})
     assert update_response.status_code == 200
     assert update_response.get_json()["use_simulated_devices"] is False
+    assert update_response.get_json()["read_only"] is True
     assert collector.config.get("control.use_simulated_devices") is False
+    assert collector.config.get("control.read_only") is True
     assert strategy.use_simulated_devices is False
+    assert strategy.read_only is True
+    assert device_manager.is_read_only() is True
 
 
 def test_modes_summary_endpoint_reports_mode_context():
@@ -736,6 +861,55 @@ def test_modes_summary_endpoint_reports_mode_context():
     assert payload["key_measurements"]["grid_power_w"] == -9000.0
     assert payload["blockers"] == []
     assert any(mode["name"] == "export_protect" and mode["available"] is True for mode in payload["supported_modes"])
+
+
+def test_modes_summary_reports_read_only_control_state_when_observation_mode_is_enabled():
+    collector = DummyCollector(
+        latest_data=[
+            _snapshot("grid_meter_real", "grid_meter", {"power": -9000, "status": "online"}),
+            _snapshot(
+                "storage_real",
+                "energy_storage",
+                {"status": "online", "power": 0, "soc": 35, "max_charge_power": 2500},
+            ),
+        ],
+        config=DummyConfig({"control.use_simulated_devices": True}),
+    )
+    device_manager = DeviceManager({"modbus": {"host": "127.0.0.1", "port": 1502}})
+    assert device_manager.register_device(
+        {"device_id": "grid_meter_real", "type": "grid_meter", "protocol": "modbus"}
+    )
+    assert device_manager.register_device(
+        {
+            "device_id": "storage_real",
+            "type": "energy_storage",
+            "protocol": "modbus",
+            "capabilities": {"readable_fields": ["soc", "power", "max_charge_power"], "writable_fields": ["mode", "charge_power"]},
+        }
+    )
+
+    dashboard = build_dashboard(device_manager, collector=collector)
+    strategy = ModeControllerStrategy(
+        {
+            "read_only": True,
+            "use_simulated_devices": True,
+            "state": {"max_data_age_seconds": 30},
+            "mode": {"export_limit_w": 5000, "export_enter_ratio": 1.0, "storage_soc_soft_limit": 95},
+        },
+        device_manager,
+        collector,
+    )
+    strategy.start()
+    dashboard.register_strategy("mode_controller", strategy)
+    client = dashboard.app.test_client()
+
+    response = client.get("/api/modes/summary")
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["current_mode"] == "export_protect"
+    assert payload["control_state"] == "read_only"
+    assert payload["read_only"] is True
 
 
 def test_modes_summary_reports_candidate_only_state_when_no_active_devices():
@@ -857,6 +1031,7 @@ def test_modes_config_endpoint_exposes_dynamic_mode_metadata_and_updates_runtime
 
     assert get_response.status_code == 200
     payload = get_response.get_json()
+    assert payload["read_only"] is False
     assert payload["modes"]["manual_override"]["configurable"] is True
     assert payload["modes"]["manual_override"]["settings"]["active"] is False
     assert payload["modes"]["manual_override"]["fields"][0]["key"] == "active"
@@ -869,6 +1044,7 @@ def test_modes_config_endpoint_exposes_dynamic_mode_metadata_and_updates_runtime
     update_response = client.post(
         "/api/modes/config",
         json={
+            "read_only": True,
             "modes": {
                 "manual_override": {"settings": {"active": True}},
                 "safe_hold": {"settings": {"max_data_age_seconds": 75}},
@@ -886,12 +1062,15 @@ def test_modes_config_endpoint_exposes_dynamic_mode_metadata_and_updates_runtime
 
     assert update_response.status_code == 200
     updated = update_response.get_json()
+    assert updated["read_only"] is True
     assert updated["modes"]["manual_override"]["settings"]["active"] is True
     assert updated["modes"]["safe_hold"]["settings"]["max_data_age_seconds"] == 75
     assert updated["modes"]["export_protect"]["enabled"] is False
     assert strategy.state_config["manual_override"] is True
     assert strategy.state_config["max_data_age_seconds"] == 75
     assert strategy.mode_config["export_protect_enabled"] is False
+    assert strategy.read_only is True
+    assert device_manager.is_read_only() is True
 
     summary_response = client.get("/api/modes/summary")
     assert summary_response.status_code == 200

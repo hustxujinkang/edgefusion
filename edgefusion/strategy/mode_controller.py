@@ -40,6 +40,7 @@ class ModeControllerStrategy(StrategyBase):
         self.state_config = dict(config.get("state", {}))
         self.mode_config = dict(config.get("mode", {}))
         self.use_simulated_devices = bool(config.get("use_simulated_devices", True))
+        self.read_only = bool(config.get("read_only", False))
         self.last_mode = "business_normal"
         self.last_reason = "not_started"
         self.last_actions: list[dict[str, Any]] = []
@@ -66,6 +67,15 @@ class ModeControllerStrategy(StrategyBase):
         self.last_reason = decision["reason"]
 
         if decision["mode"] == "export_protect" and plan is not None:
+            if self.read_only:
+                self.last_actions = []
+                return {
+                    "status": "read_only",
+                    "mode": decision["mode"],
+                    "reason": decision["reason"],
+                    "actions": [],
+                    "remaining_gap_w": plan.remaining_gap_w,
+                }
             self._execute_plan(plan)
             self.last_actions = [action.__dict__.copy() for action in plan.actions]
             return {
@@ -91,6 +101,7 @@ class ModeControllerStrategy(StrategyBase):
             "mode": self.last_mode,
             "reason": self.last_reason,
             "actions": self.last_actions,
+            "read_only": self.read_only,
             "config": self.config,
         }
 
@@ -115,6 +126,7 @@ class ModeControllerStrategy(StrategyBase):
             "current_mode_label": MODE_LABELS.get(effective["mode"], effective["mode"]),
             "current_reason": effective["reason"],
             "control_state": context["control_state"],
+            "read_only": self.read_only,
             "supported_modes": context["supported_modes"],
             "key_measurements": {
                 "timestamp": state.timestamp.isoformat(),
@@ -143,6 +155,7 @@ class ModeControllerStrategy(StrategyBase):
     def get_mode_config(self) -> Dict[str, Any]:
         return {
             "use_simulated_devices": self.use_simulated_devices,
+            "read_only": self.read_only,
             "state": {
                 "max_data_age_seconds": int(self.state_config.get("max_data_age_seconds", 30)),
                 "manual_override": bool(self.state_config.get("manual_override", False)),
@@ -232,6 +245,9 @@ class ModeControllerStrategy(StrategyBase):
         if "use_simulated_devices" in updates:
             self.use_simulated_devices = bool(updates["use_simulated_devices"])
             self.config["use_simulated_devices"] = self.use_simulated_devices
+        if "read_only" in updates:
+            self.read_only = bool(updates["read_only"])
+            self.config["read_only"] = self.read_only
 
         state_updates = updates.get("state", {})
         if "max_data_age_seconds" in state_updates:
@@ -260,6 +276,7 @@ class ModeControllerStrategy(StrategyBase):
 
         self.config["state"] = dict(self.state_config)
         self.config["mode"] = dict(self.mode_config)
+        self.config["read_only"] = self.read_only
         return self.get_mode_config()
 
     def _build_mode_config_entry(
@@ -329,7 +346,10 @@ class ModeControllerStrategy(StrategyBase):
             blockers.extend(site_state.trust_issues)
 
         participating_devices = self._get_participating_devices(filtered_snapshots)
-        control_state = "closed_loop" if self._has_closed_loop_capability(site_state, plan) else "monitor_only"
+        if self.read_only:
+            control_state = "read_only"
+        else:
+            control_state = "closed_loop" if self._has_closed_loop_capability(site_state, plan) else "monitor_only"
         supported_modes = self._build_supported_modes(site_state, raw_decision, effective_decision, plan)
 
         return {

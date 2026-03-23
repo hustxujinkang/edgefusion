@@ -445,6 +445,54 @@ def test_mode_controller_stays_monitor_only_when_device_capabilities_disallow_co
     assert device_manager.writes == []
 
 
+def test_mode_controller_keeps_judging_but_skips_writes_in_read_only_mode():
+    collector = _FakeCollector(
+        [
+            _snapshot("grid-meter-1", "grid_meter", {"power": -9000, "status": "online"}),
+            _snapshot(
+                "storage-1",
+                "energy_storage",
+                {"status": "online", "power": 0, "soc": 40, "max_charge_power": 2500},
+            ),
+        ]
+    )
+    device_manager = _FakeDeviceManager(
+        {
+            "grid-meter-1": {"device_id": "grid-meter-1", "source": "real", "status": "online"},
+            "storage-1": {
+                "device_id": "storage-1",
+                "type": "energy_storage",
+                "source": "real",
+                "status": "online",
+                "capabilities": {
+                    "readable_fields": ["soc", "power", "max_charge_power"],
+                    "writable_fields": ["mode", "charge_power"],
+                },
+            },
+        }
+    )
+    controller = ModeControllerStrategy(
+        {
+            "read_only": True,
+            "state": {"max_data_age_seconds": 30},
+            "mode": {"export_limit_w": 5000, "export_enter_ratio": 1.0},
+        },
+        device_manager,
+        collector,
+    )
+
+    controller.start()
+    result = controller.execute()
+    summary = controller.get_mode_summary()
+
+    assert result["status"] == "read_only"
+    assert result["mode"] == "export_protect"
+    assert result["actions"] == []
+    assert device_manager.writes == []
+    assert summary["current_mode"] == "export_protect"
+    assert summary["control_state"] == "read_only"
+
+
 def test_mode_controller_includes_connector_metadata_in_participating_devices():
     collector = _FakeCollector(
         [

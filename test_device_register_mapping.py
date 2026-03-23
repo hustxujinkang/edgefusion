@@ -130,6 +130,30 @@ def test_device_manager_maps_storage_and_pv_control_points_before_protocol_write
     ]
 
 
+def test_device_manager_blocks_all_writes_when_read_only_mode_is_enabled():
+    protocol = FakeProtocol()
+    device_manager = DeviceManager({})
+    device_manager.protocols["modbus"] = protocol
+
+    assert device_manager.register_device(
+        {
+            "device_id": "storage_real",
+            "type": "energy_storage",
+            "protocol": "modbus",
+            "control_map": {
+                "mode": "41001",
+                "charge_power": "41002",
+            },
+        }
+    ) is True
+
+    device_manager.set_read_only(True)
+
+    assert device_manager.write_device_data("storage_real", "mode", "charge") is False
+    assert device_manager.write_device_data("storage_real", "charge_power", 2500) is False
+    assert protocol.write_calls == []
+
+
 def test_charger_connector_view_inherits_connector_specific_register_mapping():
     protocol = FakeProtocol()
     device_manager = DeviceManager({})
