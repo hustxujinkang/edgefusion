@@ -37,41 +37,26 @@ def _resolve_from_mapping(device_info: Dict[str, Any], register: str, mapping_ke
     return register
 
 
-def _merge_mapping(target: Dict[str, Any], source: Any) -> Dict[str, Any]:
-    merged = dict(target)
-    if isinstance(source, dict):
-        for key, value in source.items():
-            merged.setdefault(key, value)
-    return merged
-
-
 def normalize_mapping_aliases(device_info: Dict[str, Any]) -> Dict[str, Any]:
+    """Drop legacy mapping aliases and keep only primary semantic maps."""
     normalized = dict(device_info)
 
     telemetry_map = normalized.get(READ_MAPPING_KEY)
     control_map = normalized.get(WRITE_MAPPING_KEY)
 
-    normalized[READ_MAPPING_KEY] = _merge_mapping(
-        telemetry_map if isinstance(telemetry_map, dict) else {},
-        normalized.get("read_map"),
-    )
-    normalized[READ_MAPPING_KEY] = _merge_mapping(
-        normalized[READ_MAPPING_KEY],
-        normalized.get("register_map"),
-    )
-
-    normalized[WRITE_MAPPING_KEY] = _merge_mapping(
-        control_map if isinstance(control_map, dict) else {},
-        normalized.get("write_map"),
-    )
-    normalized[WRITE_MAPPING_KEY] = _merge_mapping(
-        normalized[WRITE_MAPPING_KEY],
-        normalized.get("register_map"),
-    )
-
-    if not normalized[READ_MAPPING_KEY]:
+    if isinstance(telemetry_map, dict):
+        normalized[READ_MAPPING_KEY] = dict(telemetry_map)
+    else:
         normalized.pop(READ_MAPPING_KEY, None)
-    if not normalized[WRITE_MAPPING_KEY]:
+
+    if isinstance(control_map, dict):
+        normalized[WRITE_MAPPING_KEY] = dict(control_map)
+    else:
+        normalized.pop(WRITE_MAPPING_KEY, None)
+
+    if not normalized.get(READ_MAPPING_KEY):
+        normalized.pop(READ_MAPPING_KEY, None)
+    if not normalized.get(WRITE_MAPPING_KEY):
         normalized.pop(WRITE_MAPPING_KEY, None)
 
     normalized.pop("read_map", None)

@@ -1,6 +1,14 @@
 # 设备模型与接入适配说明
 
+> 当前阶段建议优先从 [docs/README.md](/C:/Users/Lenovo/Desktop/桌面工作空间/终端台区智能化项目/后台项目/edgefusion/docs/README.md) 进入文档体系。
+
 本文档用于在正式设备接入前，明确 EdgeFusion 当前对各类设备的统一模型、内置点表能力，以及新增真实设备时的适配方式。
+
+配套资料：
+
+- 最短字段表和接入清单见 [docs/device-onboarding-cheatsheet.md](/C:/Users/Lenovo/Desktop/桌面工作空间/终端台区智能化项目/后台项目/edgefusion/docs/device-onboarding-cheatsheet.md)
+- 真机联调最短路径见 `docs/modbus-device-onboarding-fast-path.md`
+- 可复制的显式映射模板见 `docs/examples/modbus-explicit-mapping-templates.yaml`
 
 ## 1. 目标
 
@@ -28,6 +36,12 @@
 - 业务层只会读 `power`、`soc`、`power_limit`、`charge_power` 这类语义字段
 - 复杂控制报文也通过统一 `write_device_data()` 下发
 
+当前项目将 `telemetry_map` / `control_map` 视为**唯一正式运行时映射接口**：
+
+- 显式接入时，设备信息直接声明这两个 map
+- 型号点表接入时，profile/point table 负责生成这两个 map
+- 不再支持 `read_map` / `write_map` / `register_map` 这类旧别名字段
+
 ## 3. 统一建模约定
 
 ### 3.1 总表
@@ -39,6 +53,11 @@
 
 - `power`: 总表功率
 - `status`: 在线/状态位
+
+核心字段：
+
+- `power`
+- `status`
 
 约定：
 
@@ -63,6 +82,19 @@
 当前语义控制：
 
 - `power_limit`
+
+核心字段：
+
+- `power`
+- `status`
+- `power_limit`
+
+可选字段：
+
+- `energy`
+- `voltage`
+- `current`
+- `min_power_limit`
 
 约定：
 
@@ -89,6 +121,22 @@
 - `mode`
 - `charge_power`
 - `discharge_power`
+
+核心字段：
+
+- `soc`
+- `power`
+- `mode`
+- `charge_power`
+- `discharge_power`
+
+可选字段：
+
+- `status`
+- `voltage`
+- `current`
+- `max_charge_power`
+- `max_discharge_power`
 
 约定：
 
@@ -125,6 +173,21 @@
 - `emergency_stop`
 - `power_limit`
 
+connector 核心字段：
+
+- `status`
+- `power`
+- `power_limit`
+
+connector 可选字段：
+
+- `energy`
+- `voltage`
+- `current`
+- `temperature`
+- `max_power`
+- `min_power`
+
 充电桩的核心约定：
 
 - 资产和接入按桩建模
@@ -154,7 +217,7 @@
 
 ### 5.1 最简单的方式：显式映射
 
-如果现场只需要快速接入某个设备，且暂时不打算沉淀型号点表，可在设备信息中直接给出：
+如果现场只需要快速接入某个设备，且暂时不打算沉淀型号点表，可在设备信息中直接给出运行时主接口：
 
 - `telemetry_map`
 - `control_map`
@@ -192,6 +255,17 @@
 - 同型号设备会复用
 - 需要沉淀厂家的标准接入方式
 - 需要把厂家差异完全收敛到模型层
+
+这里要强调的是：**型号点表不是另一套运行时接口。**
+
+- 点表/profile 的职责是生成默认 `telemetry_map` / `control_map`
+- 运行时读写仍然只走这两个正式主接口
+
+厂家扩展字段处理原则：
+
+- 厂家私有字段仍允许放进 `telemetry_map` / `control_map`
+- 这类字段不会阻塞设备接入
+- 运行时 `capabilities` 会把它们标成未知扩展字段，提醒业务层不要默认依赖
 
 基本步骤：
 
@@ -276,4 +350,3 @@
 - 总表是站级判断的基准
 - 储能和光伏是主控制对象
 - 充电桩已经具备较完整模型，但现场型号差异仍可能存在
-

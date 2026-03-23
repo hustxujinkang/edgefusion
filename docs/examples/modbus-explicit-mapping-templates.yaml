@@ -1,0 +1,137 @@
+# 真实设备接入显式映射模板
+#
+# 用途：
+# - 厂家刚给出 Modbus 文档时，先按这个模板补最小映射
+# - 先联调成功，再决定是否沉淀成 model/profile
+
+devices:
+  - device_id: storage_real_1
+    type: energy_storage
+    protocol: modbus
+    host: 192.168.10.21
+    port: 502
+    unit_id: 1
+    manufacturer: vendor_name
+    model: vendor_model_name
+    telemetry_map:
+      soc:
+        addr: 32001
+        type: u16
+        scale: 1
+        unit: "%"
+      power:
+        addr: 32002
+        type: i32
+        scale: 1
+        unit: W
+      mode:
+        addr: 32005
+        type: u16
+      status:
+        addr: 32006
+        type: u16
+    control_map:
+      mode:
+        addr: 42001
+        type: u16
+      charge_power:
+        addr: 42002
+        type: u16
+        scale: 1
+        unit: W
+      discharge_power:
+        addr: 42003
+        type: u16
+        scale: 1
+        unit: W
+    status_map:
+      0: offline
+      1: online
+      2: fault
+    mode_map:
+      0: idle
+      1: charge
+      2: discharge
+      3: auto
+
+  - device_id: charger_pile_real_1
+    type: charging_station
+    protocol: modbus
+    host: 192.168.10.31
+    port: 502
+    unit_id: 1
+    manufacturer: vendor_name
+    model: vendor_model_name
+    connector_count: 2
+    connectors:
+      - device_id: charger_pile_real_1:1
+        connector_id: 1
+        io_device_id: charger_pile_real_1
+        telemetry_map:
+          status:
+            addr: 33001
+            type: u16
+          power:
+            addr: 33002
+            type: i32
+            scale: 1
+            unit: W
+          energy:
+            addr: 33004
+            type: u32
+            scale: 0.1
+            unit: kWh
+        control_map:
+          power_limit:
+            addr: 43001
+            type: u16
+            scale: 1
+            unit: W
+          start_charging:
+            addr: 43002
+            type: u16
+            fixed_value: 1
+          stop_charging:
+            addr: 43003
+            type: u16
+            fixed_value: 1
+        status_map:
+          0: idle
+          1: charging
+          2: fault
+
+      - device_id: charger_pile_real_1:2
+        connector_id: 2
+        io_device_id: charger_pile_real_1
+        telemetry_map:
+          status:
+            addr: 33101
+            type: u16
+          power:
+            addr: 33102
+            type: i32
+            scale: 1
+            unit: W
+          energy:
+            addr: 33104
+            type: u32
+            scale: 0.1
+            unit: kWh
+        control_map:
+          power_limit:
+            addr: 43101
+            type: u16
+            scale: 1
+            unit: W
+          start_charging:
+            addr: 43102
+            type: u16
+            fixed_value: 1
+          stop_charging:
+            addr: 43103
+            type: u16
+            fixed_value: 1
+        status_map:
+          0: idle
+          1: charging
+          2: fault

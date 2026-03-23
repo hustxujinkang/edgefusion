@@ -1,6 +1,13 @@
 # 架构分层与设备接入演进说明
 
+> 这是一份架构边界文档，不是接第一台真机时的首选入口。先看 [docs/README.md](/C:/Users/Lenovo/Desktop/桌面工作空间/终端台区智能化项目/后台项目/edgefusion/docs/README.md)。
+
 本文档说明 EdgeFusion 在真实设备接入前后的推荐分层方式，明确设备模型、厂家协议适配、传输协议、物理连接之间的边界，并给出当前代码的落点和后续迭代顺序。
+
+如果当前目标是“先把一台真实 Modbus 设备最快接通”，直接配合阅读：
+
+- `docs/modbus-device-onboarding-fast-path.md`
+- `docs/examples/modbus-explicit-mapping-templates.yaml`
 
 本文档和 [device-models-and-adaptation.md](./device-models-and-adaptation.md) 的区别是：
 
@@ -321,6 +328,13 @@ HTTP 也是**补充应用层协议支持**。
 - 把新增厂家映射优先落到 `adapters/modbus/profiles/vendors/` 这类厂家 profile 模块，并通过注册入口暴露给设备族聚合层
 - 保留 `status_map/mode_map/capabilities` 这类适配层元数据
 - 让新设备接入优先补 profile，而不是补业务层分支
+
+补充约束：
+
+- 运行时正式主接口固定为 `telemetry_map` / `control_map`
+- 厂家 profile、点表和手工显式配置都只能产出这两个 map，不再保留平行别名入口
+- `register_map.py` 只负责解析正式主接口，不再承担旧字段兼容吸收
+- 设备能力摘要应同时暴露正式词表和未知扩展字段，便于现场接入时快速识别哪些字段可进入业务主链
 
 ## 5. 按设备类型落地步骤
 

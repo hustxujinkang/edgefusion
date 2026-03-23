@@ -193,7 +193,7 @@ def test_register_map_resolution_no_longer_reads_legacy_keys_directly():
     assert resolve_write_register(device_info, "power_limit") == "power_limit"
 
 
-def test_normalize_mapping_aliases_absorbs_and_removes_legacy_keys():
+def test_normalize_mapping_aliases_drops_legacy_keys_without_promoting_them():
     normalized = normalize_mapping_aliases(
         {
             "read_map": {"power": {"addr": 39991, "type": "u16"}},
@@ -202,19 +202,18 @@ def test_normalize_mapping_aliases_absorbs_and_removes_legacy_keys():
         }
     )
 
-    assert normalized["telemetry_map"]["power"] == {"addr": 39991, "type": "u16"}
-    assert normalized["control_map"]["power_limit"] == {"addr": 49991, "type": "u16"}
-    assert normalized["control_map"]["mode"] == {"addr": 42001, "type": "u16"}
+    assert "telemetry_map" not in normalized
+    assert "control_map" not in normalized
     assert "read_map" not in normalized
     assert "write_map" not in normalized
     assert "register_map" not in normalized
 
 
-def test_normalize_device_profile_promotes_legacy_register_maps_into_primary_maps():
+def test_normalize_device_profile_does_not_promote_legacy_register_maps():
     device = normalize_device_profile(
         {
             "device_id": "legacy_storage",
-            "type": "energy_storage",
+            "type": "legacy_device",
             "protocol": "modbus",
             "read_map": {"soc": {"addr": 32001, "type": "u16"}},
             "write_map": {"charge_power": {"addr": 42002, "type": "u16"}},
@@ -222,14 +221,13 @@ def test_normalize_device_profile_promotes_legacy_register_maps_into_primary_map
         }
     )
 
-    assert device["telemetry_map"]["soc"] == {"addr": 32001, "type": "u16"}
-    assert device["control_map"]["charge_power"] == {"addr": 42002, "type": "u16"}
-    assert device["control_map"]["mode"] == {"addr": 42001, "type": "u16"}
+    assert "telemetry_map" not in device
+    assert "control_map" not in device
     assert "read_map" not in device
     assert "write_map" not in device
     assert "register_map" not in device
-    assert resolve_protocol_read(device, "soc") == {"addr": 32001, "type": "u16"}
-    assert resolve_protocol_write(device, "charge_power") == {"addr": 42002, "type": "u16"}
+    assert resolve_protocol_read(device, "soc") == "soc"
+    assert resolve_protocol_write(device, "charge_power") == "charge_power"
 
 
 def test_normalize_device_profile_merges_point_table_defaults():
@@ -256,6 +254,58 @@ def test_normalize_device_profile_merges_point_table_defaults():
         "scale": 1,
         "unit": "W",
     }
+
+
+def test_build_device_capabilities_exposes_semantic_schema_and_unknown_fields():
+    device = normalize_device_profile(
+        {
+            "device_id": "storage_vendor_1",
+            "type": "energy_storage",
+            "protocol": "modbus",
+            "telemetry_map": {
+                "soc": {"addr": 32001, "type": "u16"},
+                "power": {"addr": 32002, "type": "i32"},
+                "vendor_alarm_word": {"addr": 32099, "type": "u16"},
+            },
+            "control_map": {
+                "mode": {"addr": 42001, "type": "u16"},
+                "charge_power": {"addr": 42002, "type": "u16"},
+                "vendor_dispatch_code": {"addr": 42999, "type": "u16"},
+            },
+        }
+    )
+
+    capabilities = device["capabilities"]
+
+    assert capabilities["schema"]["device_type"] == "energy_storage"
+    assert capabilities["schema"]["core_readable_fields"] == ["mode", "power", "soc"]
+    assert capabilities["schema"]["core_writable_fields"] == ["charge_power", "discharge_power", "mode"]
+    assert capabilities["schema"]["optional_readable_fields"] == [
+        "current",
+        "max_charge_power",
+        "max_discharge_power",
+        "status",
+        "voltage",
+    ]
+    assert capabilities["unknown_readable_fields"] == ["vendor_alarm_word"]
+    assert capabilities["unknown_writable_fields"] == ["vendor_dispatch_code"]
+
+
+def test_build_device_capabilities_marks_charging_station_connector_child_schema():
+    device = normalize_device_profile(
+        {
+            "device_id": "charger_schema_1",
+            "type": "charging_station",
+            "protocol": "modbus",
+            "model": "generic_charger",
+        }
+    )
+
+    capabilities = device["capabilities"]
+
+    assert capabilities["schema"]["device_type"] == "charging_station"
+    assert capabilities["schema"]["connector_child_type"] == "charging_connector"
+    assert "status" in capabilities["schema"]["optional_readable_fields"]
 
 
 def test_normalize_device_profile_keeps_explicit_mapping_over_defaults():
